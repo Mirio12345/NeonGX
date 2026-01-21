@@ -74,6 +74,18 @@ function savePermissions() {
     localStorage.setItem('neonGxPermissions', JSON.stringify(permissions));
 }
 
+// Check ad blocker stats on startup
+async function checkAdblockerStats() {
+  try {
+    const stats = await window.electronAPI.getAdblockerStats();
+    console.log('Ad blocker stats:', stats);
+    console.log('✅ Manual ad blocking is active!');
+    console.log(`Blocking rules: ${stats.patterns} patterns loaded`);
+  } catch (error) {
+    console.error('Failed to check ad blocker stats:', error);
+  }
+}
+
 // --- INIT ---
 window.addEventListener('DOMContentLoaded', () => {
     loadState();
@@ -88,11 +100,31 @@ window.addEventListener('DOMContentLoaded', () => {
     renderWorkspaces();
 
     // Hide menus on global click
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.context-menu') && !e.target.closest('.modal-overlay')) {
-            document.getElementById('contextMenu').style.display = 'none';
+    const hideContextMenu = (e) => {
+        // Don't hide if clicking inside the menu itself
+        if (e.target.closest('.context-menu')) {
+            return;
         }
-    });
+
+        // Don't hide if clicking inside a modal
+        if (e.target.closest('.modal-overlay')) {
+            return;
+        }
+
+        // Hide the context menu
+        const menu = document.getElementById('contextMenu');
+        if (menu) {
+            const isVisible = menu.style.display !== 'none' && menu.style.display !== '';
+            if (isVisible) {
+                menu.style.display = 'none';
+                console.log('Context menu hidden via click');
+            }
+        }
+    };
+
+    // Listen for clicks on document
+    document.addEventListener('click', hideContextMenu, true); // Use capture phase
+    document.addEventListener('contextmenu', hideContextMenu, true); // Use capture phase
 
     // --- TAB SCROLL WITH MOUSE WHEEL ---
     const tabBar = document.getElementById('tabBar');
@@ -156,6 +188,14 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('permDenyBtn').addEventListener('click', () => {
         respondPermission(false);
     });
+
+    // --- PERMISSION REQUEST LISTENER FROM MAIN PROCESS ---
+    window.electronAPI.onPermissionRequest?.((data) => {
+        handlePermissionRequest(data);
+    });
+
+    // --- CHECK AD BLOCKER STATS ---
+    checkAdblockerStats();
 });
 
 // --- WORKSPACES ---
@@ -311,6 +351,30 @@ function createWebviewElement(tab) {
     webview.classList.add('webview');
     if(tab.id === state.activeTabId) webview.classList.add('active');
 
+    // Hide context menu when clicking on the webview
+    webview.addEventListener('click', (e) => {
+        const menu = document.getElementById('contextMenu');
+        if (menu) {
+            const isVisible = menu.style.display !== 'none' && menu.style.display !== '';
+            if (isVisible) {
+                menu.style.display = 'none';
+                console.log('Context menu hidden via webview click');
+            }
+        }
+    });
+
+    // Also hide on contextmenu event on webview
+    webview.addEventListener('contextmenu', (e) => {
+        const menu = document.getElementById('contextMenu');
+        if (menu) {
+            const isVisible = menu.style.display !== 'none' && menu.style.display !== '';
+            if (isVisible) {
+                menu.style.display = 'none';
+                console.log('Context menu hidden via webview contextmenu');
+            }
+        }
+    });
+
     // History Logic
     webview.addEventListener('did-navigate', (e) => {
         tab.url = e.url;
@@ -336,69 +400,46 @@ function createWebviewElement(tab) {
         e.preventDefault();
 
         // Get Link if clicked
-        contextLinkUrl = e.params.linkURL || e.srcElement.src || tab.url;
+        contextLinkUrl = e.params.linkURL || e.params.srcURL || tab.url;
 
-        // Position Menu - FIX: Use getBoundingClientRect for accurate positioning
+        // Position Menu - get webview's actual position on screen
         const menu = document.getElementById('contextMenu');
-        const viewport = document.getElementById('viewport');
+        const webviewRect = webview.getBoundingClientRect();
 
-        // Get the actual viewport position relative to the viewport
-        const viewportRect = viewport.getBoundingClientRect();
+        // e.params.x and e.params.y are relative to the webview's content
+        // webviewRect gives the webview's position on the screen
+        const x = Math.round(webviewRect.left + e.params.x);
+        const y = Math.round(webviewRect.top + e.params.y);
 
-        // Calculate screen position relative to the window
-        // e.params.x and e.params.y are relative to the webview
-        const x = e.params.x + viewportRect.left;
-        const y = e.params.y + viewportRect.top;
+        console.log('Context menu positioning:', {
+            webviewRect: { left: webviewRect.left, top: webviewRect.top },
+            clickOffset: { x: e.params.x, y: e.params.y },
+            finalPosition: { x, y }
+        });
 
         menu.style.left = x + 'px';
         menu.style.top = y + 'px';
         menu.style.display = 'block';
 
         // FIX 2: Ensure menu doesn't go off-screen
+        // Get menu dimensions after setting display to block
         const menuRect = menu.getBoundingClientRect();
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight;
 
         // Adjust if menu goes off the right edge
         if (x + menuRect.width > screenWidth) {
-            menu.style.left = (x - menuRect.width) + 'px';
+            menu.style.left = (screenWidth - menuRect.width - 10) + 'px';
         }
 
         // Adjust if menu goes off the bottom edge
         if (y + menuRect.height > screenHeight) {
-            menu.style.top = (y - menuRect.height) + 'px';
+            menu.style.top = (screenHeight - menuRect.height - 10) + 'px';
         }
     });
 
-    // Permission Request Handling
-    webview.addEventListener('permission-request', async (e) => {
-        e.preventDefault();
-
-        const permissionRequest = {
-            id: Date.now(),
-            tabId: tab.id,
-            permissionType: e.permission,
-            url: tab.url,
-            timestamp: Date.now()
-        };
-
-        // Check if we have a saved decision for this domain
-        const domain = new URL(tab.url).hostname;
-        const savedPermission = permissions.find(p =>
-            p.domain === domain && p.type === e.permission
-        );
-
-        if (savedPermission) {
-            // Use saved decision
-            const webviewEl = document.getElementById(`view-${tab.id}`);
-            if (webviewEl) {
-                webviewEl.send(e.requestId);
-            }
-        } else {
-            // Show permission modal
-            showPermissionModal(permissionRequest, e.requestId);
-        }
-    });
+    // Permission Request Handling - Listen from main process via IPC
+    // (No webview permission-request listener - main process handles this)
 
     // Download Handling
     webview.addEventListener('did-start-loading', () => {
@@ -542,9 +583,42 @@ function inspect() {
 }
 
 // --- PERMISSION MANAGEMENT ---
-function showPermissionModal(request, requestId) {
+
+// Handle incoming permission request from main process
+function handlePermissionRequest(data) {
+    const { requestId, permission, url, details } = data;
+
+    // Check if we have a saved decision for this domain
+    let domain;
+    try {
+        domain = new URL(url).hostname;
+    } catch (e) {
+        domain = url;
+    }
+
+    const savedPermission = permissions.find(p =>
+        p.domain === domain && p.type === permission
+    );
+
+    if (savedPermission) {
+        // Use saved decision - respond to main process
+        window.electronAPI.respondPermission({ requestId, allowed: savedPermission.allowed });
+
+        // Save permission if it was a new request (not already saved)
+        // Already saved, so nothing to do
+    } else {
+        // Show permission modal
+        const permissionRequest = {
+            requestId: requestId,
+            permissionType: permission,
+            url: url
+        };
+        showPermissionModal(permissionRequest);
+    }
+}
+
+function showPermissionModal(request) {
     const modal = document.getElementById('permModal');
-    const title = document.getElementById('permTitle');
     const urlDisplay = document.getElementById('permUrl');
     const typeDisplay = document.getElementById('permType');
 
@@ -557,46 +631,50 @@ function showPermissionModal(request, requestId) {
         'clipboard': 'Access clipboard'
     };
 
-    title.textContent = 'Permission Request';
     urlDisplay.textContent = request.url;
     typeDisplay.textContent = permissionLabels[request.permissionType] || request.permissionType;
 
-    modal.dataset.requestId = requestId;
-    modal.dataset.tabId = request.tabId;
+    modal.dataset.requestId = request.requestId;
     modal.dataset.permissionType = request.permissionType;
+    modal.dataset.url = request.url;
 
     // Show "Remember this choice" option
     document.getElementById('permRemember').value = 'false';
     modal.style.display = 'flex';
 }
 
-async function respondPermission(allowed) {
+function respondPermission(allowed) {
     const modal = document.getElementById('permModal');
     const requestId = modal.dataset.requestId;
-    const tabId = parseInt(modal.dataset.tabId);
     const permissionType = modal.dataset.permissionType;
+    const url = modal.dataset.url;
     const remember = document.getElementById('permRemember').value === 'true';
 
-    const webviewEl = document.getElementById(`view-${tabId}`);
-    if (webviewEl) {
-        if (allowed) {
-            webviewEl.send(requestId);
-        }
-    }
+    // Send response to main process
+    window.electronAPI.respondPermission({ requestId, allowed });
 
     // Save permission if "Remember" is checked
     if (remember) {
-        const tab = getCurrentWorkspace().tabs.find(t => t.id === tabId);
-        if (tab) {
-            const domain = new URL(tab.url).hostname;
+        let domain;
+        try {
+            domain = new URL(url).hostname;
+        } catch (e) {
+            domain = url;
+        }
 
+        // Check if we already have this permission saved
+        const existingIndex = permissions.findIndex(p =>
+            p.domain === domain && p.type === permissionType
+        );
+
+        if (existingIndex === -1) {
+            // Add new permission
             permissions.push({
                 domain: domain,
                 type: permissionType,
                 allowed: allowed,
                 timestamp: Date.now()
             });
-
             savePermissions();
         }
     }
@@ -658,43 +736,9 @@ function clearAllPermissions() {
 
 // --- DOWNLOAD MANAGEMENT ---
 async function startDownload(url, filename = null) {
-    const downloadId = Date.now();
-    const download = {
-        id: downloadId,
-        url: url,
-        filename: filename || url.split('/').pop() || 'download',
-        filePath: null,
-        totalBytes: 0,
-        receivedBytes: 0,
-        state: 'progressing', // progressing, completed, cancelled, interrupted
-        savePath: null,
-        timestamp: Date.now()
-    };
-
-    downloads.unshift(download);
-    saveDownloads();
-    renderDownloads();
-
-    try {
-        const result = await window.electronAPI.downloadFile(url, {
-            savePath: `${window.electronAPI.getDownloadsPath()}/${download.filename}`,
-            saveAs: true // Show save as dialog
-        });
-
-        if (result.success) {
-            download.state = 'completed';
-            download.savePath = result.filePath;
-        } else {
-            download.state = 'interrupted';
-            download.error = result.error;
-        }
-    } catch (error) {
-        download.state = 'interrupted';
-        download.error = error.message;
-    }
-
-    saveDownloads();
-    renderDownloads();
+  // Just trigger the download - the main process will handle it via will-download event
+  // Downloads are initiated automatically when the webview encounters a downloadable file
+  console.log('Download initiated for:', url);
 }
 
 function cancelDownload(id) {
@@ -811,21 +855,38 @@ function renderDownloads() {
     });
 }
 
-// Handle download progress updates from main process
-window.electronAPI.onDownloadProgress((event, progress) => {
-    const download = downloads.find(d => d.id === progress.id);
-    if (download) {
-        download.receivedBytes = progress.receivedBytes;
-        download.totalBytes = progress.totalBytes;
-        download.state = progress.state;
+// Handle download events from main process
+window.electronAPI?.onDownloadStarted?.((data) => {
+  const download = {
+    id: data.id,
+    url: data.url,
+    filename: data.filename,
+    totalBytes: data.totalBytes,
+    receivedBytes: 0,
+    state: 'progressing',
+    savePath: null,
+    timestamp: Date.now()
+  };
 
-        if (progress.savePath) {
-            download.savePath = progress.savePath;
-        }
+  downloads.unshift(download);
+  saveDownloads();
+  renderDownloads();
+});
 
-        saveDownloads();
-        renderDownloads();
+window.electronAPI?.onDownloadProgress?.((progress) => {
+  const download = downloads.find(d => d.id === progress.id);
+  if (download) {
+    download.receivedBytes = progress.receivedBytes;
+    download.totalBytes = progress.totalBytes;
+    download.state = progress.state;
+
+    if (progress.savePath) {
+      download.savePath = progress.savePath;
     }
+
+    saveDownloads();
+    renderDownloads();
+  }
 });
 
 // --- EXTENSION INSTALLATION ---

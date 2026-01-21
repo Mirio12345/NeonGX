@@ -16,13 +16,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Download functions
   getDownloadsPath: () => ipcRenderer.invoke('get-downloads-path'),
-  downloadFile: (url, options) => ipcRenderer.invoke('download-file', url, options),
+  downloadFile: (url) => ipcRenderer.invoke('download-file', url),
   cancelDownload: (id) => ipcRenderer.send('cancel-download', id),
   openPath: (path) => ipcRenderer.invoke('open-path', path),
   showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
 
   // Permission functions
   clearPermissions: () => ipcRenderer.invoke('clear-permissions'),
+  respondPermission: (data) => ipcRenderer.send('permission-response', data),
+  onPermissionRequest: (callback) => {
+    ipcRenderer.on('permission-request', (event, data) => callback(data));
+  },
+
+  // Ad blocker functions
+  getAdblockerStats: () => ipcRenderer.invoke('get-adblocker-stats'),
 
   // Event listeners for downloads
   onDownloadStarted: (callback) => {
