@@ -159,67 +159,56 @@ body {
 .nav-btn { color: var(--text-dim); cursor: pointer; font-size: 1rem; transition: 0.2s; }
 .nav-btn:hover { color: white; }
 
-/* --- 4. VIEWPORT (The "100% Height" Fix) --- */
+/* --- 4. VIEWPORT --- */
 .viewport {
     position: fixed;
-    /* 
-       FIXED POSITIONING:
-       Start exactly below all headers (32 + 36 + 40 = 108px)
-       Start exactly to the right of sidebar (240px)
-       Go all the way to edges (0)
-    */
-    top: var(--total-header); 
+    top: var(--total-header);
     left: var(--sidebar-width);
     right: 0;
     bottom: 0;
-    
+
     background-color: #000;
-    z-index: 1; /* Lowest layer */
+    z-index: 1;
     overflow: hidden;
 }
 
-/* 
-   WEBVIEW: 
-   Height 100% of the viewport container.
-   No flexbox, no calculations, just fill the box.
-*/
 webview {
-    display: flex; /* Default state: visible */
+    display: flex;
     width: 100%;
     height: 100%;
     border: none;
-    position: absolute; /* Stack them on top of each other */
+    position: absolute;
     top: 0; left: 0;
-    background: white; /* Sites usually have white bg */
+    background: white;
 }
 
 webview:not(.active) {
     display: none;
 }
 
-/* --- FIX 4: TAB SCROLLBAR --- */
+/* --- TAB SCROLLBAR --- */
 .tab-bar::-webkit-scrollbar {
-    height: 6px; /* Make scrollbar visible */
+    height: 6px;
 }
 .tab-bar::-webkit-scrollbar-track {
     background: transparent;
 }
 .tab-bar::-webkit-scrollbar-thumb {
-    background: #333; /* Dark grey scroll handle */
+    background: #333;
     border-radius: 3px;
 }
 .tab-bar::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
 }
 
-/* --- FIX 2 & 6: HISTORY MODAL & CONTEXT MENU STYLES --- */
+/* --- HISTORY MODAL --- */
 .modal-overlay {
     position: fixed;
     top: 32px; left: var(--sidebar-width);
     right: 0; bottom: 0;
     background: rgba(0,0,0,0.7);
     z-index: 2000;
-    display: none; /* Hidden by default */
+    display: none;
     justify-content: center;
     align-items: center;
 }
@@ -251,6 +240,7 @@ webview:not(.active) {
 .modal-body {
     padding: 15px;
     overflow-y: auto;
+    flex: 1;
 }
 
 .history-item-ui {
@@ -266,15 +256,15 @@ webview:not(.active) {
 
 /* CONTEXT MENU */
 .context-menu {
-    position: fixed; /* RELATIVE TO SCREEN */
+    position: fixed;
     background: #2c2e33;
     border: 1px solid #444;
     border-radius: 4px;
     width: 200px;
     display: none;
-    z-index: 9999; /* ABOVE EVERYTHING (Even Title Bar) */
+    z-index: 9999;
     box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-    padding: 5px 0; /* Add padding inside menu */
+    padding: 5px 0;
 }
 
 .menu-item {
@@ -291,17 +281,17 @@ webview:not(.active) {
 /* --- RESIZE HANDLE --- */
 .resize-handle {
     position: absolute;
-    top: 0; 
-    right: 0; 
+    top: 0;
+    right: 0;
     bottom: 0;
     width: 5px;
-    cursor: ew-resize; /* Changes mouse icon to arrows */
+    cursor: ew-resize;
     background: transparent;
     z-index: 999;
     transition: background 0.2s;
 }
 .resize-handle:hover {
-    background: var(--accent); /* Show red when hovering */
+    background: var(--accent);
 }
 
 /* --- WORKSPACE DELETE BUTTON --- */
@@ -311,10 +301,10 @@ webview:not(.active) {
     padding: 2px 5px;
     border-radius: 4px;
     cursor: pointer;
-    opacity: 0; /* Hidden by default */
+    opacity: 0;
 }
 .ws-item:hover .ws-delete-btn {
-    opacity: 1; /* Show on hover */
+    opacity: 1;
 }
 .ws-delete-btn:hover {
     background: #ff4444;
@@ -375,3 +365,126 @@ webview:not(.active) {
     color: white;
 }
 .btn-confirm:hover { filter: brightness(1.2); }
+
+/* --- PERMISSION MODAL STYLES --- */
+.perm-modal {
+    width: 450px;
+    height: auto;
+    padding: 20px;
+    max-height: 80%;
+}
+
+.perm-request-info {
+    padding: 15px;
+    background: var(--bg-lighter);
+    border-radius: 6px;
+    margin: 15px 0;
+}
+
+.perm-modal .modal-footer {
+    padding: 15px;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* --- PERMISSIONS PANEL STYLES --- */
+.perm-panel {
+    width: 600px;
+    height: 70%;
+}
+
+.perm-item {
+    padding: 12px;
+    border-bottom: 1px solid #222;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.perm-item:hover {
+    background: var(--bg-hover);
+}
+
+.btn-delete {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.btn-delete:hover {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.1);
+}
+
+/* --- DOWNLOADS PANEL STYLES --- */
+.downloads-panel {
+    width: 600px;
+    height: 70%;
+}
+
+.download-item {
+    padding: 12px;
+    border-bottom: 1px solid #222;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.download-item:hover {
+    background: var(--bg-hover);
+}
+
+.download-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.download-filename {
+    font-size: 0.9rem;
+    color: white;
+    word-break: break-all;
+}
+
+.download-meta {
+    font-size: 0.75rem;
+    color: #666;
+    display: flex;
+    gap: 10px;
+}
+
+.download-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon:hover {
+    color: white;
+    background: var(--bg-hover);
+}
+
+/* --- MODAL FOOTER --- */
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}

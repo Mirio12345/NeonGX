@@ -13,7 +13,7 @@
         get: () => 'Gecko',
     });
     Object.defineProperty(navigator, 'vendor', {
-        get: () => '', 
+        get: () => '',
     });
 
     Object.defineProperty(navigator, 'plugins', {
@@ -47,23 +47,22 @@
             originalQuery(parameters)
     );
 
-    // --- 5. NEW: INJECT COSMETIC CSS (YouTube Cleanup) ---
-    // This function injects styles to hide ads visually
+    // 5. INJECT COSMETIC CSS (YouTube Cleanup)
     function injectCosmetics() {
         const style = document.createElement('style');
         style.textContent = `
             /* Hide Homepage Ads (Banners, Sidebar) */
-            ytd-display-ad-renderer, ytd-ad-slot-renderer, #masthead-ad, 
+            ytd-display-ad-renderer, ytd-ad-slot-renderer, #masthead-ad,
             #player-ads, .ytp-ad-overlay-slot {
                 display: none !important;
             }
 
-            /* Hide Video Overlay Ads (The boxes over the video) */
+            /* Hide Video Overlay Ads */
             .ytp-ad-module, .ytp-ad-overlay-image, .ytp-ad-text {
                 display: none !important;
             }
 
-            /* Hide "Skip Ad" button related UI if we can't block the video itself */
+            /* Hide "Skip Ad" button related UI */
             .ytp-ad-preview-container {
                 display: none !important;
             }
