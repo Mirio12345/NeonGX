@@ -1,0 +1,29 @@
+{
+  "name": "neon-gx-browser",
+  "version": "1.0.0",
+  "description": "A custom browser built with Electron.",
+  "main": "main.js",
+  "author": "Mirio",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.mirio.neongx",
+    "productName": "NeonGX",
+    "directories": {
+      "output": "distribution"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^1.28.0"
+    
+  },
+  "devDependencies": {
+    "electron-builder": "^26.4.0",
+    "electron": "^30.0.0"
+  }
+}
