@@ -19,7 +19,7 @@
     }
   },
   "dependencies": {
-    "@ghostery/adblocker-electron": "^1.28.0"
+    "@ghostery/adblocker-electron": "^2.0.0"
     
   },
   "devDependencies": {
