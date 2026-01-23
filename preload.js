@@ -2,40 +2,48 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Window controls
-  minimize: () => ipcRenderer.send('window-minimize'),
-  maximize: () => ipcRenderer.send('window-maximize'),
-  close: () => ipcRenderer.send('window-close'),
+    getRamStats: () => ipcRenderer.invoke('get-ram-usage'),
+    minimize: () => ipcRenderer.send('window-minimize'),
+    maximize: () => ipcRenderer.send('window-maximize'),
+    close: () => ipcRenderer.send('window-close'),
 
-  // RAM stats
-  getRamStats: () => ipcRenderer.invoke('get-ram-usage'),
+    // Extension functions
+    openDialog: () => ipcRenderer.invoke('dialog:openDirectory'),
+    installExtension: (path) => ipcRenderer.invoke('install-extension', path),
 
-  // Extension functions
-  openDialog: () => ipcRenderer.invoke('dialog:openDirectory'),
-  installExtension: (path) => ipcRenderer.invoke('install-extension', path),
+    // Permission Management
+    onPermissionRequest: (callback) => {
+        ipcRenderer.on('permission-request', (event, data) => callback(data));
+    },
+    respondToPermission: (requestId, allowed) => {
+        ipcRenderer.send('permission-response', { requestId, allowed });
+    },
+    getPermissionPreferences: () => ipcRenderer.invoke('get-permission-preferences'),
+    setPermissionPreference: (origin, permission, allowed) => {
+        return ipcRenderer.invoke('set-permission-preference', { origin, permission, allowed });
+    },
 
-  // Download functions
-  getDownloadsPath: () => ipcRenderer.invoke('get-downloads-path'),
-  downloadFile: (url) => ipcRenderer.invoke('download-file', url),
-  cancelDownload: (id) => ipcRenderer.send('cancel-download', id),
-  openPath: (path) => ipcRenderer.invoke('open-path', path),
-  showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
+    // Download Management
+    onDownloadStarted: (callback) => {
+        ipcRenderer.on('download-started', (event, data) => callback(data));
+    },
+    onDownloadUpdated: (callback) => {
+        ipcRenderer.on('download-updated', (event, data) => callback(data));
+    },
+    onDownloadCompleted: (callback) => {
+        ipcRenderer.on('download-completed', (event, data) => callback(data));
+    },
+    getActiveDownloads: () => ipcRenderer.invoke('get-active-downloads'),
+    cancelDownload: (downloadId) => ipcRenderer.invoke('cancel-download', downloadId),
+    openDownloadsFolder: () => ipcRenderer.invoke('open-downloads-folder'),
+    openDownloadedFile: (filePath) => ipcRenderer.invoke('open-downloaded-file', filePath),
+    clearCompletedDownloads: () => ipcRenderer.invoke('clear-completed-downloads'),
 
-  // Permission functions
-  clearPermissions: () => ipcRenderer.invoke('clear-permissions'),
-  respondPermission: (data) => ipcRenderer.send('permission-response', data),
-  onPermissionRequest: (callback) => {
-    ipcRenderer.on('permission-request', (event, data) => callback(data));
-  },
-
-  // Ad blocker functions
-  getAdblockerStats: () => ipcRenderer.invoke('get-adblocker-stats'),
-
-  // Event listeners for downloads
-  onDownloadStarted: (callback) => {
-    ipcRenderer.on('download-started', (event, data) => callback(data));
-  },
-  onDownloadProgress: (callback) => {
-    ipcRenderer.on('download-progress', (event, data) => callback(data));
-  }
+    // Helper to remove all listeners
+    removeAllListeners: () => {
+        ipcRenderer.removeAllListeners('permission-request');
+        ipcRenderer.removeAllListeners('download-started');
+        ipcRenderer.removeAllListeners('download-updated');
+        ipcRenderer.removeAllListeners('download-completed');
+    }
 });

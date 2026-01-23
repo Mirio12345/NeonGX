@@ -1,122 +1,15 @@
 // main.js
-const { app, BrowserWindow, ipcMain, session, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
+const { ElectronBlocker } = require('@ghostery/adblocker-electron');
 const path = require('path');
 
 let mainWindow;
-
-// Store active downloads
-const activeDownloads = new Map();
-
-// Store pending permission requests
-const pendingPermissionRequests = new Map();
-
-// Comprehensive ad/tracking blocking patterns
-const AD_PATTERNS = {
-  // Ad domains
-  domains: [
-    'doubleclick.net',
-    'googleads.g.doubleclick.net',
-    'googleadservices.com',
-    'googlesyndication.com',
-    'googletagmanager.com',
-    'googletagservices.com',
-    'ads-twitter.com',
-    'twitter.com/i/jot',
-    'facebook.com/tr',
-    'facebook.com/xti.php',
-    'connect.facebook.net',
-    'amazon-adsystem.com',
-    'amazon-adsystem.com',
-    'adnxs.com',
-    'adsystem.com',
-    'advertising.com',
-    'analytics.com',
-    'pixel.facebook.com',
-    'analytics.google.com',
-    'youtube.com/pagead',
-    'youtube.com/ptracking',
-    'googlevideo.com',
-    'ytimg.com/yts/img/pixel',
-    'pubmatic.com',
-    'rubiconproject.com',
-    'scorecardresearch.com',
-    'quantserve.com',
-    'adserver.com',
-    'ads.yahoo.com',
-    'adserver.yahoo.com',
-    'adtechus.com',
-    'advertising.com',
-    'yieldmo.com',
-    'criteo.com',
-    'scorecardresearch.com',
-    'rlcdn.com',
-    'adcolony.com',
-    'tapad.com',
-    'adsystem.com',
-    'adsystem.net',
-    'adserver.com',
-    'adnxs.com',
-    'bluekai.com',
-    'contextweb.com',
-    'trkcdn.net',
-    'trackad.net',
-    'tracking',
-    'telemetry',
-    'beacon',
-    'pixel',
-    'analytics'
-  ],
-
-  // URL patterns for ads
-  urlPatterns: [
-    '/ads.',
-    '/adserver.',
-    '/advertising.',
-    '/adtech.',
-    '/adnxs.',
-    '/banner',
-    '/popup.',
-    '/popunder.',
-    '/sponsor',
-    '/promo.',
-    '/affiliate',
-    '/tracking.',
-    '/telemetry.',
-    '/beacon.',
-    '/pixel.',
-    '/analytics.',
-    '/metrics.',
-    '/collector.',
-    '/logger.',
-    '/tracker.',
-    '/fingerprint.',
-    '/stat.',
-    '/log.',
-    '/report.'
-  ],
-
-  // Script paths to block
-  scriptPatterns: [
-    '/ads.js',
-    '/adsbygoogle.js',
-    '/advertising.js',
-    '/tracker.js',
-    '/analytics.js',
-    '/telemetry.js',
-    '/beacon.js',
-    '/pixel.js',
-    '/fingerprint.js',
-    '/tracker.js',
-    '/ga.js',
-    '/gtag.js',
-    '/fbq.js',
-    '/bq.js',
-    '/snowplow.js'
-  ]
-};
+let pendingPermissionRequest = null;
+let activeDownloads = new Map();
 
 function createWindow() {
-  // Check if window already exists
+  // FIX: Check if window already exists!
+  // If it does, just show it/focus it and stop.
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
@@ -133,40 +26,44 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+
+      // ADD THIS: Allow extensions to inject content scripts
       plugins: true,
-      webSecurity: false, // Needed for extensions to work with webview
-      allowRunningInsecureContent: true,
     }
+
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.loadFile('index.html');
 
-  // Clear reference when window is closed
+  // FIX: Clear reference when window is closed so we know it's gone
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
-  // Set up download handling
-  setupDownloadHandler(mainWindow);
 }
 
 app.whenReady().then(() => {
+  // 1. CREATE WINDOW
   createWindow();
 
-  // Get webview session
+  // 2. INITIALIZE AD BLOCKER
+  // We need to block ads in the 'persist:main' session (which your webview uses)
+  //
+  ElectronBlocker.fromPrebuiltAdsAndTracking().then((blocker) => {
+     //Enable blocking for the specific session your webview uses
+    blocker.enableBlockingInSession(session.fromPartition('persist:main'));
+    console.log("Ad Blocker Activated!");
+  }).catch((err) => {
+    console.error("Failed to load ad blocker:", err);
+  });
+
   const webviewSession = session.fromPartition('persist:main');
 
-  console.log('Setting up ad blocker and extensions...');
-
-  // SETUP MANUAL AD BLOCKING
-  setupAdBlocking(webviewSession);
-
-  // Configure User Agent and Client Hints
   webviewSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    // Set Firefox User Agent
+
+    // 1. Set Firefox User Agent
     details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0';
 
-    // Delete Chrome Client Hints
+    // 2. CRITICAL: Delete Chrome Client Hints (Firefox doesn't use these)
     delete details.requestHeaders['Sec-CH-UA'];
     delete details.requestHeaders['Sec-CH-UA-Mobile'];
     delete details.requestHeaders['Sec-CH-UA-Platform'];
@@ -175,164 +72,239 @@ app.whenReady().then(() => {
     callback({ requestHeaders: details.requestHeaders });
   }, { urls: ['<all_urls>'] });
 
-  // Permission request handler - forward to renderer
+  // 3. PERMISSION MANAGEMENT
   webviewSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const url = webContents.getURL();
-    console.log(`Permission request: ${permission} from ${url}`);
+    console.log('Permission request:', permission, details);
 
-    const requestId = Date.now();
+    // Store the callback to be used after user responds
+    const requestId = Date.now().toString();
+    pendingPermissionRequest = {
+      id: requestId,
+      permission: permission,
+      details: details,
+      callback: callback,
+      url: webContents.getURL()
+    };
 
-    // Store callback so renderer can respond
-    pendingPermissionRequests.set(requestId, callback);
-
-    // Send request to renderer
+    // Send permission request to renderer
     if (mainWindow) {
       mainWindow.webContents.send('permission-request', {
-        requestId: requestId,
+        id: requestId,
         permission: permission,
-        url: url,
-        details: details
+        details: details,
+        url: webContents.getURL()
       });
     }
+  });
 
-    // Don't call callback immediately - wait for renderer response
-    // Set timeout to auto-deny if no response
-    setTimeout(() => {
-      if (pendingPermissionRequests.has(requestId)) {
-        const storedCallback = pendingPermissionRequests.get(requestId);
-        storedCallback(false);
-        pendingPermissionRequests.delete(requestId);
+  // 4. DOWNLOAD MANAGEMENT
+  webviewSession.on('will-download', (event, item, webContents) => {
+    const downloadId = Date.now().toString();
+    const url = item.getURL();
+    const filename = item.getFilename();
+    const totalBytes = item.getTotalBytes();
+
+    // Set default save path to downloads folder
+    const downloadsPath = app.getPath('downloads');
+    const savePath = path.join(downloadsPath, filename);
+    item.setSavePath(savePath);
+
+    // Create download item
+    const download = {
+      id: downloadId,
+      filename: filename,
+      url: url,
+      totalBytes: totalBytes,
+      receivedBytes: 0,
+      savePath: savePath,
+      state: 'progress', // 'progress', 'completed', 'cancelled', 'interrupted'
+      startTime: Date.now()
+    };
+
+    activeDownloads.set(downloadId, download);
+
+    // Send download started event to renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('download-started', download);
+    }
+
+    // Track download progress
+    item.on('updated', (event, state) => {
+      if (state === 'interrupted') {
+        download.state = 'interrupted';
+        download.paused = true;
+      } else if (state === 'progressing') {
+        if (item.isPaused()) {
+          download.state = 'interrupted';
+          download.paused = true;
+        } else {
+          download.state = 'progress';
+          download.receivedBytes = item.getReceivedBytes();
+          download.paused = false;
+        }
       }
-    }, 30000); // 30 second timeout
+
+      // Send update to renderer
+      if (mainWindow) {
+        mainWindow.webContents.send('download-updated', download);
+      }
+    });
+
+    item.on('done', (event, state) => {
+      download.state = state; // 'completed', 'cancelled', 'interrupted'
+
+      if (state === 'completed') {
+        download.receivedBytes = download.totalBytes;
+        download.endTime = Date.now();
+        download.duration = download.endTime - download.startTime;
+
+        // Show notification
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          new Notification({
+            title: 'Download Complete',
+            body: `${filename} has been downloaded successfully.`
+          }).show();
+        }
+      } else {
+        download.endTime = Date.now();
+      }
+
+      // Send completion event to renderer
+      if (mainWindow) {
+        mainWindow.webContents.send('download-completed', download);
+      }
+
+      // Remove from active downloads after some time
+      setTimeout(() => {
+        activeDownloads.delete(downloadId);
+      }, 60000); // Keep in memory for 1 minute
+    });
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow === null) {
       createWindow();
     }
   });
 
   app.on('window-all-closed', () => {
+    // On Windows/Linux, quit the app when ALL windows are closed.
+    // On macOS, usually we keep it running, but since we have a frameless custom app,
+    // we can let it quit to keep it simple.
     if (process.platform !== 'darwin') {
       app.quit();
     }
   });
 });
 
-// --- AD BLOCKING ---
-function setupAdBlocking(webviewSession) {
-  let blockedCount = 0;
+// --- PERMISSION MANAGEMENT IPC HANDLERS ---
 
-  webviewSession.webRequest.onBeforeRequest((details, callback) => {
-    const url = details.url.toLowerCase();
-    const { resourceType } = details;
+// Handle permission response from renderer
+ipcMain.on('permission-response', (event, { requestId, allowed }) => {
+  if (pendingPermissionRequest && pendingPermissionRequest.id === requestId) {
+    console.log(`Permission ${requestId}: ${allowed ? 'granted' : 'denied'}`);
 
-    // Skip blocking for main page loads, documents, scripts, stylesheets
-    if (['mainFrame', 'subFrame', 'stylesheet', 'script', 'xhr', 'fetch'].includes(resourceType)) {
-      callback({ cancel: false });
-      return;
-    }
+    // Call the original callback with the user's decision
+    pendingPermissionRequest.callback(allowed);
 
-    // Check if should block
-    let shouldBlock = false;
-    let blockReason = '';
-
-    // Check domain blocking
-    for (const pattern of AD_PATTERNS.domains) {
-      if (url.includes(pattern)) {
-        shouldBlock = true;
-        blockReason = `Ad domain: ${pattern}`;
-        break;
-      }
-    }
-
-    // Check URL pattern blocking
-    if (!shouldBlock) {
-      for (const pattern of AD_PATTERNS.urlPatterns) {
-        if (url.includes(pattern)) {
-          shouldBlock = true;
-          blockReason = `Ad URL pattern: ${pattern}`;
-          break;
-        }
-      }
-    }
-
-    // Check script blocking
-    if (!shouldBlock && resourceType === 'script') {
-      for (const pattern of AD_PATTERNS.scriptPatterns) {
-        if (url.includes(pattern)) {
-          shouldBlock = true;
-          blockReason = `Ad script: ${pattern}`;
-          break;
-        }
-      }
-    }
-
-    // Check tracking/analytics blocking
-    if (!shouldBlock) {
-      for (const pattern of ['tracking', 'telemetry', 'beacon', 'pixel', 'analytics', 'metrics']) {
-        if (url.includes(pattern)) {
-          // More aggressive blocking for tracking
-          const isTracker = url.includes('track') || 
-                         url.includes('telemetry') || 
-                         url.includes('beacon') ||
-                         url.includes('pixel');
-          
-          if (isTracker) {
-            shouldBlock = true;
-            blockReason = `Tracking: ${pattern}`;
-            break;
-          }
-        }
-      }
-    }
-
-    if (shouldBlock) {
-      blockedCount++;
-      console.log(`🚫 Blocked: ${blockReason} - ${url}`);
-      callback({ cancel: true });
-    } else {
-      callback({ cancel: false });
-    }
-  }, { urls: ['<all_urls>'] });
-
-  console.log(`✅ Ad blocker initialized with ${blockedCount} potential blocking rules`);
-}
-
-// --- IPC HANDLERS ---
-
-// Dialog handlers
-ipcMain.handle('dialog:openDirectory', async () => {
-  if (!mainWindow) return null;
-
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: "Select Extension Folder"
-  });
-  return result.filePaths[0];
-});
-
-// Extension installation - Load into webview session
-ipcMain.handle('install-extension', async (event, extensionPath) => {
-  try {
-    console.log('Installing extension from:', extensionPath);
-
-    // CRITICAL: Load extension into webview session
-    const webviewSession = session.fromPartition('persist:main');
-    const id = await webviewSession.loadExtension(extensionPath);
-
-    console.log(`✅ Extension loaded in webview session: ${id}`);
-    console.log('Extension will work in webviews now!');
-
-    return { success: true, id: id };
-  } catch (e) {
-    console.error('❌ Failed to load extension:', e);
-    console.error('Error details:', e.message);
-    return { success: false, error: e.message };
+    // Clear pending request
+    pendingPermissionRequest = null;
   }
 });
 
-// RAM usage
+// Handle permission preferences
+ipcMain.handle('get-permission-preferences', async () => {
+  const preferences = {};
+  return preferences;
+});
+
+ipcMain.handle('set-permission-preference', async (event, { origin, permission, allowed }) => {
+  // You could save these to a file or database for persistence
+  console.log(`Setting permission preference: ${origin} - ${permission} = ${allowed}`);
+  return true;
+});
+
+// --- DOWNLOAD MANAGEMENT IPC HANDLERS ---
+
+// Get list of active downloads
+ipcMain.handle('get-active-downloads', async () => {
+  return Array.from(activeDownloads.values());
+});
+
+// Pause a download
+ipcMain.handle('pause-download', async (event, downloadId) => {
+  // Note: Electron download items don't have a pause method by default
+  // You would need to implement this differently
+  return { success: false, error: 'Pause not supported' };
+});
+
+// Cancel a download
+ipcMain.handle('cancel-download', async (event, downloadId) => {
+  // Since downloads are managed by the session, we need to track them differently
+  // This is a placeholder - you'd need to store the actual download item references
+  console.log('Cancel download requested:', downloadId);
+  return { success: true };
+});
+
+// Open downloads folder
+ipcMain.handle('open-downloads-folder', async () => {
+  const downloadsPath = app.getPath('downloads');
+  const { shell } = require('electron');
+  shell.openPath(downloadsPath);
+  return { success: true };
+});
+
+// Open downloaded file
+ipcMain.handle('open-downloaded-file', async (event, filePath) => {
+  const { shell } = require('electron');
+  shell.openPath(filePath);
+  return { success: true };
+});
+
+// Clear completed downloads
+ipcMain.handle('clear-completed-downloads', async () => {
+  for (const [id, download] of activeDownloads.entries()) {
+    if (download.state === 'completed' || download.state === 'cancelled' || download.state === 'interrupted') {
+      activeDownloads.delete(id);
+    }
+  }
+  return { success: true };
+});
+
+// --- EXISTING IPC HANDLERS ---
+
+ipcMain.handle('dialog:openDirectory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+        title: "Select Extension Folder"
+    });
+    return result.filePaths[0];
+});
+
+ipcMain.handle('install-extension', async (event, extensionPath) => {
+    try {
+        // FIX: Target the 'persist:main' session specifically!
+        const id = await session.fromPartition('persist:main').loadExtension(extensionPath);
+        console.log(`Extension loaded in webview session: ${id}`);
+        return { success: true, id: id };
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+app.whenReady().then(() => {
+  createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
 ipcMain.handle('get-ram-usage', async () => {
   const usage = process.getProcessMemoryInfo();
   return {
@@ -341,120 +313,10 @@ ipcMain.handle('get-ram-usage', async () => {
   };
 });
 
-// Window controls
-ipcMain.on('window-minimize', () => mainWindow?.minimize());
+// --- Control Window from Renderer ---
+ipcMain.on('window-minimize', () => mainWindow.minimize());
 ipcMain.on('window-maximize', () => {
-  if (!mainWindow) return;
   if (mainWindow.isMaximized()) mainWindow.unmaximize();
   else mainWindow.maximize();
 });
-ipcMain.on('window-close', () => mainWindow?.close());
-
-// Get downloads path
-ipcMain.handle('get-downloads-path', async () => {
-  return app.getPath('downloads');
-});
-
-// Start download
-ipcMain.handle('download-file', async (event, url) => {
-  if (!mainWindow) return { success: false, error: 'No main window' };
-
-  try {
-    const downloadId = Date.now();
-    return {
-      success: true,
-      downloadId: downloadId
-    };
-  } catch (error) {
-    console.error('Download error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Cancel download
-ipcMain.on('cancel-download', (event, id) => {
-  const downloadItem = activeDownloads.get(id);
-  if (downloadItem) {
-    downloadItem.cancel();
-    activeDownloads.delete(id);
-  }
-});
-
-// Open path
-ipcMain.handle('open-path', async (event, filePath) => {
-  shell.openPath(filePath);
-});
-
-// Show item in folder
-ipcMain.handle('show-item-in-folder', async (event, filePath) => {
-  shell.showItemInFolder(filePath);
-});
-
-// Respond to permission request
-ipcMain.on('permission-response', (event, { requestId, allowed }) => {
-  if (pendingPermissionRequests.has(requestId)) {
-    const callback = pendingPermissionRequests.get(requestId);
-    callback(allowed);
-    pendingPermissionRequests.delete(requestId);
-  }
-});
-
-// Get ad blocker statistics
-ipcMain.handle('get-adblocker-stats', async () => {
-  return {
-    patterns: AD_PATTERNS.domains.length + AD_PATTERNS.urlPatterns.length + AD_PATTERNS.scriptPatterns.length,
-    manualBlocking: true
-  };
-});
-
-// --- DOWNLOAD HANDLER ---
-function setupDownloadHandler(browserWindow) {
-  const webviewSession = session.fromPartition('persist:main');
-
-  webviewSession.on('will-download', (event, item, webContents) => {
-    // DO NOT prevent default - let download happen!
-    // event.preventDefault(); // <-- REMOVED THIS LINE
-
-    const downloadId = Date.now();
-
-    // Store download item so we can cancel it if needed
-    activeDownloads.set(downloadId, item);
-
-    // Set save path to downloads folder
-    const fileName = item.getFilename();
-    const savePath = path.join(app.getPath('downloads'), fileName);
-    item.setSavePath(savePath);
-
-    // Notify renderer of download start
-    browserWindow.webContents.send('download-started', {
-      id: downloadId,
-      url: item.getURL(),
-      filename: fileName,
-      totalBytes: item.getTotalBytes()
-    });
-
-    // Update progress
-    item.on('updated', (event, state) => {
-      browserWindow.webContents.send('download-progress', {
-        id: downloadId,
-        state: state,
-        receivedBytes: item.getReceivedBytes(),
-        totalBytes: item.getTotalBytes()
-      });
-    });
-
-    // Download completed or cancelled
-    item.on('done', (event, state) => {
-      const progressData = {
-        id: downloadId,
-        state: state,
-        receivedBytes: item.getReceivedBytes(),
-        totalBytes: item.getTotalBytes(),
-        savePath: item.getSavePath()
-      };
-
-      browserWindow.webContents.send('download-progress', progressData);
-      activeDownloads.delete(downloadId);
-    });
-  });
-}
+ipcMain.on('window-close', () => mainWindow.close());

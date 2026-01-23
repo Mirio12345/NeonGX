@@ -47,7 +47,8 @@
             originalQuery(parameters)
     );
 
-    // 5. INJECT COSMETIC CSS (YouTube Cleanup)
+    // --- 5. NEW: INJECT COSMETIC CSS (YouTube Cleanup) ---
+    // This function injects styles to hide ads visually
     function injectCosmetics() {
         const style = document.createElement('style');
         style.textContent = `
@@ -57,12 +58,12 @@
                 display: none !important;
             }
 
-            /* Hide Video Overlay Ads */
+            /* Hide Video Overlay Ads (The boxes over the video) */
             .ytp-ad-module, .ytp-ad-overlay-image, .ytp-ad-text {
                 display: none !important;
             }
 
-            /* Hide "Skip Ad" button related UI */
+            /* Hide "Skip Ad" button related UI if we can't block the video itself */
             .ytp-ad-preview-container {
                 display: none !important;
             }

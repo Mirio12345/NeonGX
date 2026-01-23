@@ -8,7 +8,7 @@
 </head>
 <body>
 
-    <!-- Workspace Prompt Modal -->
+    <!-- ADD THIS: Workspace Prompt Modal -->
     <div id="wsModal" class="modal-overlay" style="display: none;">
         <div class="modal-content ws-modal">
             <h3>New Workspace</h3>
@@ -20,63 +20,30 @@
         </div>
     </div>
 
-    <!-- Permission Request Modal -->
-    <div id="permModal" class="modal-overlay" style="display: none;">
-        <div class="modal-content perm-modal">
+    <!-- NEW: Permission Request Modal -->
+    <div id="permissionModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content permission-modal">
             <div class="modal-header">
-                <h2 id="permTitle">Permission Request</h2>
-                <button class="close-btn" onclick="document.getElementById('permModal').style.display='none'">&times;</button>
+                <h2><i class="fa-solid fa-shield-halved"></i> Permission Request</h2>
             </div>
             <div class="modal-body">
-                <div class="perm-request-info">
-                    <p id="permType" style="font-size: 1.1rem; margin-bottom: 10px;"></p>
-                    <p id="permUrl" style="color: #aaa; font-size: 0.9rem; word-break: break-all;"></p>
-                </div>
-                <div style="margin: 20px 0; display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="permRemember" onchange="this.value = this.checked ? 'true' : 'false'">
-                    <label for="permRemember" style="font-size: 0.9rem; color: #ccc;">Remember this choice for this site</label>
-                </div>
+                <p class="permission-text">
+                    <strong id="requestingUrl"></strong> is requesting permission to access:
+                </p>
+                <p class="permission-type" id="permissionType"></p>
             </div>
-            <div class="modal-actions" style="justify-content: center; gap: 20px;">
-                <button class="btn-cancel" id="permDenyBtn" style="min-width: 100px;">Deny</button>
-                <button class="btn-confirm" id="permAllowBtn" style="min-width: 100px;">Allow</button>
+            <div class="modal-footer">
+                <button class="btn-deny" onclick="handlePermissionResponse(false)">
+                    <i class="fa-solid fa-xmark"></i> Block
+                </button>
+                <button class="btn-allow" onclick="handlePermissionResponse(true)">
+                    <i class="fa-solid fa-check"></i> Allow
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- Permissions Panel -->
-    <div id="permissionsPanel" class="modal-overlay" style="display: none;">
-        <div class="modal-content perm-panel">
-            <div class="modal-header">
-                <h2>Site Permissions</h2>
-                <button class="close-btn" onclick="togglePermissionsPanel()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="permList" style="overflow-y: auto; flex: 1;"></div>
-            </div>
-            <div class="modal-footer" style="padding: 15px; border-top: 1px solid #333; display: flex; justify-content: flex-end;">
-                <button class="btn-cancel" onclick="clearAllPermissions()">Clear All</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Downloads Panel -->
-    <div id="downloadsPanel" class="modal-overlay" style="display: none;">
-        <div class="modal-content downloads-panel">
-            <div class="modal-header">
-                <h2>Downloads</h2>
-                <button class="close-btn" onclick="toggleDownloadsPanel()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="downloadsList" style="overflow-y: auto; flex: 1;"></div>
-            </div>
-            <div class="modal-footer" style="padding: 15px; border-top: 1px solid #333; display: flex; justify-content: flex-end;">
-                <button class="btn-cancel" onclick="clearDownloads()">Clear Completed</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Title Bar -->
+    <!-- 1. Title Bar -->
     <div class="title-bar">
         <div class="title-bar-text">NeonGX Browser</div>
         <div class="window-controls">
@@ -86,9 +53,9 @@
         </div>
     </div>
 
-    <!-- Sidebar -->
+    <!-- 2. Sidebar -->
     <aside class="sidebar">
-        <!-- Drag Handle -->
+        <!-- ADD THIS: The Drag Handle -->
         <div id="resize-handle" class="resize-handle"></div>
 
         <div>
@@ -100,23 +67,48 @@
         </div>
 
         <div class="sidebar-bottom">
-            <div class="history-item" onclick="toggleDownloadsPanel()">
-                <i class="fa-solid fa-download"></i> Downloads
+            <!-- NEW: Downloads Button -->
+            <div class="sidebar-item-wrapper">
+                <div class="history-item" onclick="toggleDownloads()">
+                    <i class="fa-solid fa-download"></i> Downloads
+                    <span class="downloads-badge" id="downloadsBadge" style="display: none;">0</span>
+                </div>
+                <!-- Downloads Panel -->
+                <div class="downloads-panel" id="downloadsPanel" style="display: none;">
+                    <div class="downloads-header">
+                        <span>Downloads</span>
+                        <div class="downloads-actions">
+                            <button class="downloads-action-icon" onclick="openDownloadsFolder()" title="Open Downloads Folder">
+                                <i class="fa-solid fa-folder"></i>
+                            </button>
+                            <button class="downloads-action-icon" onclick="clearCompletedDownloads()" title="Clear Completed">
+                                <i class="fa-solid fa-broom"></i>
+                            </button>
+                            <button class="downloads-action-icon" onclick="toggleDownloads()" title="Close">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="downloads-list" id="downloadsList">
+                        <!-- Downloads injected here -->
+                    </div>
+                </div>
             </div>
-            <div class="history-item" onclick="togglePermissionsPanel()">
-                <i class="fa-solid fa-shield"></i> Permissions
-            </div>
+
+            <!-- NEW: Add Extension Button -->
             <div class="history-item" onclick="installExtension()">
                 <i class="fa-solid fa-puzzle-piece"></i> Add Extension
             </div>
+
             <div class="history-item" onclick="toggleHistory()">
                 <i class="fa-solid fa-clock-rotate-left"></i> History
             </div>
         </div>
     </aside>
 
-    <!-- Main Container -->
+    <!-- 4. Main Container -->
     <div class="main-container">
+
         <!-- UI Overlay -->
         <div class="ui-overlay">
             <div class="tab-bar" id="tabBar">
@@ -138,7 +130,7 @@
         <!-- The Viewport -->
         <div class="viewport" id="viewport"></div>
 
-        <!-- History Modal Overlay -->
+        <!-- 5. History Modal Overlay -->
         <div id="historyModal" class="modal-overlay" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
@@ -150,14 +142,12 @@
                 </div>
             </div>
         </div>
+
     </div>
 
-    <!-- Custom Right Click Menu -->
+    <!-- 6. Custom Right Click Menu (Dynamic) -->
     <div id="contextMenu" class="context-menu">
-        <div class="menu-item" onclick="copyUrl()">Copy Link Address</div>
-        <div class="menu-item" onclick="openNewTab()">Open in New Tab</div>
-        <div class="menu-divider"></div>
-        <div class="menu-item" onclick="inspect()">Inspect Element</div>
+        <!-- Items will be dynamically added here -->
     </div>
 
     <script src="renderer.js"></script>

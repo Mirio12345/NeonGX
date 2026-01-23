@@ -1,21 +1,28 @@
 {
-  "name": "neongx-browser",
+  "name": "neon-gx-browser",
   "version": "1.0.0",
-  "description": "A modern Electron browser with workspaces, ad blocking, and extensions",
+  "description": "A custom browser built with Electron with permission and download management.",
   "main": "main.js",
+  "author": "Mirio",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --inspect"
+    "build": "electron-builder"
   },
-  "keywords": [
-    "electron",
-    "browser",
-    "webview"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {},
+  "build": {
+    "appId": "com.mirio.neongx",
+    "productName": "NeonGX",
+    "directories": {
+      "output": "distribution"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.13.4"
+  },
   "devDependencies": {
-    "electron": "^27.0.0"
+    "electron": "^40.0.0",
+    "electron-builder": "^23.0.6"
   }
 }

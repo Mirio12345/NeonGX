@@ -2,6 +2,7 @@
 
 const FIREFOX_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0';
 
+
 // --- STATE ---
 const defaultState = {
     activeWorkspaceId: 1,
@@ -19,12 +20,47 @@ let lastUrl = ""; // To prevent spamming history
 
 // Context Menu Data
 let contextLinkUrl = null;
+let contextImageUrl = null;
+let contextWebviewId = null;
 
-// Downloads Data
-let downloads = [];
+// Permission Data
+let pendingPermissionRequest = null;
+let permissionPreferences = {};
 
-// Permissions Data
-let permissions = []; // Store pending permissions
+// Download Data
+let activeDownloads = [];
+
+// --- SOUND EFFECTS ---
+
+// Create audio context for sound effects
+let audioContext = null;
+
+function playClickSound() {
+    try {
+        // Create a simple click sound using Web Audio API
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Create a short, pleasant click sound
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.05);
+
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.05);
+    } catch (e) {
+        console.log('Audio not supported:', e);
+    }
+}
 
 // --- UTILS ---
 function loadState() {
@@ -43,19 +79,11 @@ function loadState() {
         }
     }
 
-    const savedDownloads = localStorage.getItem('neonGxDownloads');
-    if (savedDownloads) {
-        try {
-            downloads = JSON.parse(savedDownloads);
-        } catch(e) {
-            console.error("Corrupt downloads file");
-        }
-    }
-
+    // Load permission preferences
     const savedPermissions = localStorage.getItem('neonGxPermissions');
     if (savedPermissions) {
         try {
-            permissions = JSON.parse(savedPermissions);
+            permissionPreferences = JSON.parse(savedPermissions);
         } catch(e) {
             console.error("Corrupt permissions file");
         }
@@ -66,29 +94,549 @@ function saveState() {
     localStorage.setItem('neonGxState', JSON.stringify(state));
 }
 
-function saveDownloads() {
-    localStorage.setItem('neonGxDownloads', JSON.stringify(downloads));
-}
-
 function savePermissions() {
-    localStorage.setItem('neonGxPermissions', JSON.stringify(permissions));
+    localStorage.setItem('neonGxPermissions', JSON.stringify(permissionPreferences));
 }
 
-// Check ad blocker stats on startup
-async function checkAdblockerStats() {
-  try {
-    const stats = await window.electronAPI.getAdblockerStats();
-    console.log('Ad blocker stats:', stats);
-    console.log('✅ Manual ad blocking is active!');
-    console.log(`Blocking rules: ${stats.patterns} patterns loaded`);
-  } catch (error) {
-    console.error('Failed to check ad blocker stats:', error);
-  }
+// --- PERMISSION MANAGEMENT ---
+
+// Format permission type for display
+function formatPermissionType(permission) {
+    const permissionTypes = {
+        'notifications': 'Notifications',
+        'geolocation': 'Location',
+        'media': 'Camera/Microphone',
+        'midi': 'MIDI',
+        'pointerLock': 'Pointer Lock',
+        'fullscreen': 'Fullscreen',
+        'openExternal': 'Open External Links'
+    };
+    return permissionTypes[permission] || permission;
+}
+
+// Show permission request modal
+function showPermissionRequest(data) {
+    pendingPermissionRequest = data;
+
+    const modal = document.getElementById('permissionModal');
+    const permissionType = document.getElementById('permissionType');
+    const requestingUrl = document.getElementById('requestingUrl');
+
+    permissionType.textContent = formatPermissionType(data.permission);
+    requestingUrl.textContent = data.url;
+
+    modal.style.display = 'flex';
+}
+
+// Handle permission response
+function handlePermissionResponse(allowed) {
+    if (pendingPermissionRequest) {
+        // Send response to main process
+        window.electronAPI.respondToPermission(pendingPermissionRequest.id, allowed);
+
+        // Save preference for this origin
+        const origin = new URL(pendingPermissionRequest.url).origin;
+        permissionPreferences[`${origin}:${pendingPermissionRequest.permission}`] = allowed;
+        savePermissions();
+
+        // Hide modal
+        document.getElementById('permissionModal').style.display = 'none';
+
+        // Clear pending request
+        pendingPermissionRequest = null;
+    }
+}
+
+// --- DOWNLOAD MANAGEMENT ---
+
+// Format bytes to human readable
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Format duration
+function formatDuration(ms) {
+    if (!ms) return '';
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
+}
+
+// Get download progress percentage
+function getDownloadProgress(download) {
+    if (download.totalBytes === 0) return 0;
+    return Math.round((download.receivedBytes / download.totalBytes) * 100);
+}
+
+// Toggle downloads panel
+function toggleDownloads() {
+    const panel = document.getElementById('downloadsPanel');
+    if (panel.style.display === 'none' || panel.style.display === '') {
+        panel.style.display = 'block';
+        updateDownloadsList();
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+// Update downloads list UI
+function updateDownloadsList() {
+    const list = document.getElementById('downloadsList');
+
+    if (activeDownloads.length === 0) {
+        list.innerHTML = '<div class="downloads-empty">No active downloads</div>';
+        return;
+    }
+
+    list.innerHTML = '';
+
+    // Sort by time (newest first)
+    const sortedDownloads = [...activeDownloads].reverse();
+
+    sortedDownloads.forEach(download => {
+        const div = document.createElement('div');
+        div.className = 'download-item';
+
+        const progress = getDownloadProgress(download);
+        const isCompleted = download.state === 'completed';
+        const isInterrupted = download.state === 'interrupted';
+
+        let statusIcon = '';
+        let statusText = '';
+
+        if (isCompleted) {
+            statusIcon = '<i class="fa-solid fa-check-circle" style="color: #27c93f;"></i>';
+            statusText = 'Completed';
+        } else if (isInterrupted) {
+            statusIcon = '<i class="fa-solid fa-exclamation-circle" style="color: #ffbd2e;"></i>';
+            statusText = 'Interrupted';
+        } else {
+            statusIcon = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            statusText = `${progress}%`;
+        }
+
+        div.innerHTML = `
+            <div class="download-info">
+                <div class="download-filename">
+                    <span class="download-status-icon">${statusIcon}</span>
+                    <span>${download.filename}</span>
+                </div>
+                <div class="download-details">
+                    <span>${formatBytes(download.receivedBytes)} / ${formatBytes(download.totalBytes)}</span>
+                    ${download.duration ? `<span class="download-time">${formatDuration(download.duration)}</span>` : ''}
+                </div>
+            </div>
+            <div class="download-actions">
+                ${isCompleted ? `<button class="download-action-btn" onclick="openDownloadedFile('${download.savePath}')" title="Open"><i class="fa-solid fa-folder-open"></i></button>` : ''}
+                <button class="download-action-btn" onclick="cancelDownload('${download.id}')" title="Cancel"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            ${!isCompleted ? `<div class="download-progress-bar"><div class="download-progress-fill" style="width: ${progress}%"></div></div>` : ''}
+        `;
+
+        list.appendChild(div);
+    });
+
+    // Update downloads count badge
+    const badge = document.getElementById('downloadsBadge');
+    const activeCount = activeDownloads.filter(d => d.state === 'progress').length;
+    if (activeCount > 0) {
+        badge.textContent = activeCount;
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+// Cancel a download
+async function cancelDownload(downloadId) {
+    await window.electronAPI.cancelDownload(downloadId);
+    const index = activeDownloads.findIndex(d => d.id === downloadId);
+    if (index !== -1) {
+        activeDownloads[index].state = 'cancelled';
+        updateDownloadsList();
+    }
+}
+
+// Open downloaded file
+async function openDownloadedFile(filePath) {
+    await window.electronAPI.openDownloadedFile(filePath);
+}
+
+// Open downloads folder
+async function openDownloadsFolder() {
+    await window.electronAPI.openDownloadsFolder();
+}
+
+// Clear completed downloads
+async function clearCompletedDownloads() {
+    await window.electronAPI.clearCompletedDownloads();
+    activeDownloads = activeDownloads.filter(d => d.state === 'progress');
+    updateDownloadsList();
+}
+
+// --- CONTEXT MENU MANAGEMENT ---
+
+// Get current page URL from active webview
+function getCurrentPageUrl() {
+    const wv = document.getElementById(`view-${state.activeTabId}`);
+    return wv ? wv.getURL() : '';
+}
+
+// Get current page title from active webview
+function getCurrentPageTitle() {
+    const ws = getCurrentWorkspace();
+    const tab = ws.tabs.find(t => t.id === state.activeTabId);
+    return tab ? tab.title : '';
+}
+
+// Show context menu at correct position
+function showContextMenu(e, tabId = null) {
+    console.log('Context menu event received:', e);
+    console.log('Tab ID:', tabId);
+
+    e.preventDefault();
+
+    const menu = document.getElementById('contextMenu');
+    const viewport = document.getElementById('viewport');
+
+    // Get viewport bounds
+    const viewportRect = viewport.getBoundingClientRect();
+
+    // Calculate position - add viewport offset
+    let x = e.params.x + viewportRect.left;
+    let y = e.params.y + viewportRect.top;
+
+    // Store context data
+    contextLinkUrl = e.params.linkURL || null;
+    contextImageUrl = e.params.srcURL || e.srcElement?.src || null;
+    contextWebviewId = tabId || state.activeTabId;
+
+    // Update menu items based on context
+    updateContextMenuItems(e);
+
+    // Position menu with boundary checking
+    const menuWidth = 240;
+    const menuHeight = menu.scrollHeight || 200;
+
+    // Adjust if menu would go off right edge
+    if (x + menuWidth > window.innerWidth) {
+        x = window.innerWidth - menuWidth - 10;
+    }
+
+    // Adjust if menu would go off bottom edge
+    if (y + menuHeight > window.innerHeight) {
+        y = window.innerHeight - menuHeight - 10;
+    }
+
+    // Apply position
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.style.display = 'block';
+
+    // Play click sound
+    playClickSound();
+}
+
+// Update context menu items based on what was clicked
+function updateContextMenuItems(e) {
+    const menu = document.getElementById('contextMenu');
+    const hasLink = !!e.params.linkURL;
+    const hasImage = !!e.params.srcURL || !!e.srcElement?.src;
+    const hasSelection = e.params.selectionText && e.params.selectionText.trim().length > 0;
+    const isEditable = e.params.isEditable || false;
+    const hasMedia = e.params.mediaType === 'image' || e.params.mediaType === 'video';
+
+    // Build menu HTML dynamically
+    let menuHTML = '';
+
+    // Link-related options
+    if (hasLink) {
+        menuHTML += `
+            <div class="menu-item" data-action="openLink" title="Open link in current tab">
+                <i class="fa-solid fa-link"></i> Open Link
+            </div>
+            <div class="menu-item" data-action="openLinkNewTab" title="Open link in new tab">
+                <i class="fa-solid fa-plus"></i> Open in New Tab
+            </div>
+            <div class="menu-item" data-action="copyLink" title="Copy link address">
+                <i class="fa-regular fa-copy"></i> Copy Link Address
+            </div>
+            <div class="menu-divider"></div>`;
+    }
+
+    // Selection options
+    if (hasSelection) {
+        menuHTML += `
+            <div class="menu-item" data-action="copy" title="Copy selection">
+                <i class="fa-regular fa-copy"></i> Copy
+            </div>
+            <div class="menu-item" data-action="cut" title="Cut selection">
+                <i class="fa-solid fa-scissors"></i> Cut
+            </div>
+            <div class="menu-item" data-action="paste" title="Paste">
+                <i class="fa-solid fa-paste"></i> Paste
+            </div>
+            <div class="menu-divider"></div>`;
+    } else if (isEditable) {
+        menuHTML += `
+            <div class="menu-item" data-action="paste" title="Paste">
+                <i class="fa-solid fa-paste"></i> Paste
+            </div>
+            <div class="menu-divider"></div>`;
+    }
+
+    // Image-related options
+    if (hasImage) {
+        menuHTML += `
+            <div class="menu-item" data-action="openImage" title="Open image in new tab">
+                <i class="fa-regular fa-image"></i> Open Image
+            </div>
+            <div class="menu-item" data-action="copyImage" title="Copy image">
+                <i class="fa-regular fa-image"></i> Copy Image
+            </div>
+            <div class="menu-item" data-action="copyImageAddress" title="Copy image address">
+                <i class="fa-regular fa-copy"></i> Copy Image Address
+            </div>
+            <div class="menu-divider"></div>`;
+    }
+
+    // Page options
+    menuHTML += `
+        <div class="menu-item" data-action="back" title="Go back">
+            <i class="fa-solid fa-arrow-left"></i> Back
+        </div>
+        <div class="menu-item" data-action="forward" title="Go forward">
+            <i class="fa-solid fa-arrow-right"></i> Forward
+        </div>
+        <div class="menu-item" data-action="reload" title="Reload page">
+            <i class="fa-solid fa-rotate-right"></i> Reload
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-item" data-action="copyPageUrl" title="Copy page URL">
+            <i class="fa-regular fa-copy"></i> Copy Page URL
+        </div>
+        <div class="menu-item" data-action="inspect" title="Open DevTools">
+            <i class="fa-solid fa-code"></i> Inspect Element
+        </div>
+    `;
+
+    menu.innerHTML = menuHTML;
+
+    // Add click handlers to all menu items
+    menu.querySelectorAll('.menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const action = item.getAttribute('data-action');
+            handleContextMenuAction(action);
+        });
+
+        // Add hover sound
+        item.addEventListener('mouseenter', playClickSound);
+    });
+}
+
+// Handle context menu actions
+function handleContextMenuAction(action) {
+    const wv = document.getElementById(`view-${state.activeTabId}`);
+
+    if (!wv) {
+        hideContextMenu();
+        return;
+    }
+
+    switch (action) {
+        case 'openLink':
+            if (contextLinkUrl) {
+                wv.src = contextLinkUrl;
+            }
+            break;
+
+        case 'openLinkNewTab':
+            if (contextLinkUrl) {
+                createTab(contextLinkUrl);
+            }
+            break;
+
+        case 'copyLink':
+        case 'copyLinkAddress':
+        case 'copyImageAddress':
+            if (contextLinkUrl || contextImageUrl) {
+                const urlToCopy = contextLinkUrl || contextImageUrl;
+                navigator.clipboard.writeText(urlToCopy).then(() => {
+                    console.log('Copied:', urlToCopy);
+                });
+            }
+            break;
+
+        case 'copy':
+            wv.executeJavaScript(`
+                (function() {
+                    const selection = window.getSelection();
+                    if (selection.toString()) {
+                        document.execCommand('copy');
+                        return true;
+                    }
+                    return false;
+                })()
+            `);
+            break;
+
+        case 'cut':
+            wv.executeJavaScript(`
+                (function() {
+                    const selection = window.getSelection();
+                    if (selection.toString()) {
+                        document.execCommand('cut');
+                        return true;
+                    }
+                    return false;
+                })()
+            `);
+            break;
+
+        case 'paste':
+            wv.executeJavaScript(`
+                (function() {
+                    document.execCommand('paste');
+                    return true;
+                })()
+            `);
+            break;
+
+        case 'openImage':
+            if (contextImageUrl) {
+                createTab(contextImageUrl);
+            }
+            break;
+
+        case 'copyImage':
+            wv.executeJavaScript(`
+                (function() {
+                    const img = document.querySelector('img[src="${contextImageUrl}"]');
+                    if (img) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        canvas.toBlob((blob) => {
+                            const item = new ClipboardItem({ 'image/png': blob });
+                            navigator.clipboard.write([item]);
+                        });
+                    }
+                })()
+            `);
+            break;
+
+        case 'back':
+            if (wv.canGoBack()) {
+                wv.goBack();
+            }
+            break;
+
+        case 'forward':
+            if (wv.canGoForward()) {
+                wv.goForward();
+            }
+            break;
+
+        case 'reload':
+            wv.reload();
+            break;
+
+        case 'copyPageUrl':
+            const pageUrl = wv.getURL();
+            if (pageUrl) {
+                navigator.clipboard.writeText(pageUrl).then(() => {
+                    console.log('Copied page URL:', pageUrl);
+                });
+            }
+            break;
+
+        case 'inspect':
+            wv.openDevTools();
+            break;
+    }
+
+    // Hide menu after action
+    hideContextMenu();
+}
+
+// Hide context menu
+function hideContextMenu() {
+    const menu = document.getElementById('contextMenu');
+    menu.style.display = 'none';
+
+    // Clear context data
+    contextLinkUrl = null;
+    contextImageUrl = null;
+    contextWebviewId = null;
 }
 
 // --- INIT ---
 window.addEventListener('DOMContentLoaded', () => {
     loadState();
+
+    // Setup permission request listener
+    window.electronAPI.onPermissionRequest((data) => {
+        console.log('Permission request received:', data);
+
+        // Check if we have a saved preference
+        const origin = new URL(data.url).origin;
+        const preferenceKey = `${origin}:${data.permission}`;
+
+        if (permissionPreferences[preferenceKey] !== undefined) {
+            // Use saved preference automatically
+            window.electronAPI.respondToPermission(data.id, permissionPreferences[preferenceKey]);
+        } else {
+            // Show permission request modal
+            showPermissionRequest(data);
+        }
+    });
+
+    // Setup download event listeners
+    window.electronAPI.onDownloadStarted((download) => {
+        console.log('Download started:', download);
+        activeDownloads.push(download);
+        updateDownloadsList();
+    });
+
+    window.electronAPI.onDownloadUpdated((download) => {
+        console.log('Download updated:', download);
+        const index = activeDownloads.findIndex(d => d.id === download.id);
+        if (index !== -1) {
+            activeDownloads[index] = download;
+            updateDownloadsList();
+        }
+    });
+
+    window.electronAPI.onDownloadCompleted((download) => {
+        console.log('Download completed:', download);
+        const index = activeDownloads.findIndex(d => d.id === download.id);
+        if (index !== -1) {
+            activeDownloads[index] = download;
+            updateDownloadsList();
+        }
+
+        // Show notification
+        if (download.state === 'completed') {
+            // You could also show a toast notification here
+            console.log('Download complete:', download.filename);
+        }
+    });
+
+    // Load active downloads from main process
+    window.electronAPI.getActiveDownloads().then(downloads => {
+        activeDownloads = downloads || [];
+        updateDownloadsList();
+    });
 
     const ws = getCurrentWorkspace();
     if (!ws || ws.tabs.length === 0) {
@@ -99,32 +647,29 @@ window.addEventListener('DOMContentLoaded', () => {
 
     renderWorkspaces();
 
-    // Hide menus on global click
-    const hideContextMenu = (e) => {
-        // Don't hide if clicking inside the menu itself
-        if (e.target.closest('.context-menu')) {
-            return;
-        }
-
-        // Don't hide if clicking inside a modal
-        if (e.target.closest('.modal-overlay')) {
-            return;
-        }
-
-        // Hide the context menu
+    // Hide context menu on global click (but NOT when clicking inside menu)
+    document.addEventListener('click', (e) => {
         const menu = document.getElementById('contextMenu');
-        if (menu) {
-            const isVisible = menu.style.display !== 'none' && menu.style.display !== '';
-            if (isVisible) {
-                menu.style.display = 'none';
-                console.log('Context menu hidden via click');
-            }
+        if (menu.style.display === 'block' && !menu.contains(e.target)) {
+            hideContextMenu();
         }
-    };
+    });
 
-    // Listen for clicks on document
-    document.addEventListener('click', hideContextMenu, true); // Use capture phase
-    document.addEventListener('contextmenu', hideContextMenu, true); // Use capture phase
+    // Hide context menu on right click elsewhere
+    document.addEventListener('contextmenu', (e) => {
+        const menu = document.getElementById('contextMenu');
+        if (menu.style.display === 'block' && !menu.contains(e.target)) {
+            hideContextMenu();
+        }
+    });
+
+    // Hide context menu on scroll
+    window.addEventListener('scroll', () => {
+        const menu = document.getElementById('contextMenu');
+        if (menu.style.display === 'block') {
+            hideContextMenu();
+        }
+    });
 
     // --- TAB SCROLL WITH MOUSE WHEEL ---
     const tabBar = document.getElementById('tabBar');
@@ -180,25 +725,9 @@ window.addEventListener('DOMContentLoaded', () => {
             confirmWorkspace();
         }
     });
-
-    // --- PERMISSION RESPONSE HANDLERS ---
-    document.getElementById('permAllowBtn').addEventListener('click', () => {
-        respondPermission(true);
-    });
-    document.getElementById('permDenyBtn').addEventListener('click', () => {
-        respondPermission(false);
-    });
-
-    // --- PERMISSION REQUEST LISTENER FROM MAIN PROCESS ---
-    window.electronAPI.onPermissionRequest?.((data) => {
-        handlePermissionRequest(data);
-    });
-
-    // --- CHECK AD BLOCKER STATS ---
-    checkAdblockerStats();
 });
 
-// --- WORKSPACES ---
+// --- WORKSPACES (Fix 3) ---
 function getCurrentWorkspace() {
     return state.workspaces.find(w => w.id === state.activeWorkspaceId);
 }
@@ -227,7 +756,8 @@ function confirmWorkspace() {
         });
         switchWorkspace(newId);
     } else {
-        alert("Please enter a valid name.");
+        // Optional: Shake input or show error if empty
+        alert("Please enter a valid name."); // You can use alert for errors, or just do nothing
         return;
     }
 
@@ -280,36 +810,7 @@ function renderWorkspaces() {
     });
 }
 
-function deleteWorkspace(id) {
-    // Prevent deleting the only workspace
-    if (state.workspaces.length <= 1) {
-        alert("You cannot delete the last workspace.");
-        return;
-    }
-
-    const index = state.workspaces.findIndex(w => w.id === id);
-    if (index === -1) return;
-
-    // 1. Remove from array
-    state.workspaces.splice(index, 1);
-
-    // 2. Handle Active Workspace Switch
-    if (state.activeWorkspaceId === id) {
-        // Switch to the first available workspace
-        state.activeWorkspaceId = state.workspaces[0].id;
-
-        // Force a re-render of the new workspace tabs
-        const viewport = document.getElementById('viewport');
-        viewport.innerHTML = ''; // Clear old tabs
-        restoreTabs();
-    }
-
-    // 3. Save and Update UI
-    saveState();
-    renderWorkspaces();
-}
-
-// --- TABS ---
+// --- TABS (Fix 4 - Logic) ---
 function createTab(url = 'https://www.google.com') {
     const id = Date.now();
     const tab = { id: id, url: url, title: 'Loading...' };
@@ -342,6 +843,7 @@ function createWebviewElement(tab) {
     const viewport = document.getElementById('viewport');
     const webview = document.createElement('webview');
 
+
     webview.setAttribute('preload', 'webview-preload.js');
     webview.id = `view-${tab.id}`;
     webview.src = tab.url;
@@ -351,31 +853,11 @@ function createWebviewElement(tab) {
     webview.classList.add('webview');
     if(tab.id === state.activeTabId) webview.classList.add('active');
 
-    // Hide context menu when clicking on the webview
-    webview.addEventListener('click', (e) => {
-        const menu = document.getElementById('contextMenu');
-        if (menu) {
-            const isVisible = menu.style.display !== 'none' && menu.style.display !== '';
-            if (isVisible) {
-                menu.style.display = 'none';
-                console.log('Context menu hidden via webview click');
-            }
-        }
-    });
+    // Append to viewport FIRST
+    viewport.appendChild(webview);
 
-    // Also hide on contextmenu event on webview
-    webview.addEventListener('contextmenu', (e) => {
-        const menu = document.getElementById('contextMenu');
-        if (menu) {
-            const isVisible = menu.style.display !== 'none' && menu.style.display !== '';
-            if (isVisible) {
-                menu.style.display = 'none';
-                console.log('Context menu hidden via webview contextmenu');
-            }
-        }
-    });
-
-    // History Logic
+    // THEN attach event listeners (after webview is in DOM)
+    // Fix 2: History Logic
     webview.addEventListener('did-navigate', (e) => {
         tab.url = e.url;
         if(state.activeTabId === tab.id) document.getElementById('urlInput').value = e.url;
@@ -395,66 +877,15 @@ function createWebviewElement(tab) {
         renderTabs();
     });
 
-    // FIX 1: Context Menu Logic with Correct Positioning
+    // Context Menu Logic - FIXED (attached after webview is in DOM)
     webview.addEventListener('context-menu', (e) => {
-        e.preventDefault();
-
-        // Get Link if clicked
-        contextLinkUrl = e.params.linkURL || e.params.srcURL || tab.url;
-
-        // Position Menu - get webview's actual position on screen
-        const menu = document.getElementById('contextMenu');
-        const webviewRect = webview.getBoundingClientRect();
-
-        // e.params.x and e.params.y are relative to the webview's content
-        // webviewRect gives the webview's position on the screen
-        const x = Math.round(webviewRect.left + e.params.x);
-        const y = Math.round(webviewRect.top + e.params.y);
-
-        console.log('Context menu positioning:', {
-            webviewRect: { left: webviewRect.left, top: webviewRect.top },
-            clickOffset: { x: e.params.x, y: e.params.y },
-            finalPosition: { x, y }
-        });
-
-        menu.style.left = x + 'px';
-        menu.style.top = y + 'px';
-        menu.style.display = 'block';
-
-        // FIX 2: Ensure menu doesn't go off-screen
-        // Get menu dimensions after setting display to block
-        const menuRect = menu.getBoundingClientRect();
-        const screenWidth = window.innerWidth;
-        const screenHeight = window.innerHeight;
-
-        // Adjust if menu goes off the right edge
-        if (x + menuRect.width > screenWidth) {
-            menu.style.left = (screenWidth - menuRect.width - 10) + 'px';
-        }
-
-        // Adjust if menu goes off the bottom edge
-        if (y + menuRect.height > screenHeight) {
-            menu.style.top = (screenHeight - menuRect.height - 10) + 'px';
+        console.log('Webview context-menu event fired:', e);
+        try {
+            showContextMenu(e, tab.id);
+        } catch (error) {
+            console.error('Error showing context menu:', error);
         }
     });
-
-    // Permission Request Handling - Listen from main process via IPC
-    // (No webview permission-request listener - main process handles this)
-
-    // Download Handling
-    webview.addEventListener('did-start-loading', () => {
-        // Can show loading indicator here
-    });
-
-    webview.addEventListener('did-finish-load', () => {
-        // Hide loading indicator here
-    });
-
-    webview.addEventListener('will-navigate', (e) => {
-        // Track navigation for downloads
-    });
-
-    viewport.appendChild(webview);
 }
 
 function closeTab(e, id) {
@@ -537,7 +968,7 @@ function goBack() { const wv = document.getElementById(`view-${state.activeTabId
 function goForward() { const wv = document.getElementById(`view-${state.activeTabId}`); if(wv && wv.canGoForward()) wv.goForward(); }
 function reload() { const wv = document.getElementById(`view-${state.activeTabId}`); if(wv) wv.reload(); }
 
-// --- HISTORY FUNCTIONS ---
+// --- FIX 2: HISTORY FUNCTIONS ---
 function toggleHistory() {
     const modal = document.getElementById('historyModal');
     const list = document.getElementById('historyList');
@@ -565,331 +996,37 @@ function toggleHistory() {
     }
 }
 
-// --- CONTEXT MENU FUNCTIONS ---
-function copyUrl() {
-    if(contextLinkUrl) {
-        navigator.clipboard.writeText(contextLinkUrl);
-    }
-}
 
-function openNewTab() {
-    if(contextLinkUrl) {
-        createTab(contextLinkUrl);
-    }
-}
-
-function inspect() {
-    alert("DevTools are disabled for security/design purposes.");
-}
-
-// --- PERMISSION MANAGEMENT ---
-
-// Handle incoming permission request from main process
-function handlePermissionRequest(data) {
-    const { requestId, permission, url, details } = data;
-
-    // Check if we have a saved decision for this domain
-    let domain;
-    try {
-        domain = new URL(url).hostname;
-    } catch (e) {
-        domain = url;
-    }
-
-    const savedPermission = permissions.find(p =>
-        p.domain === domain && p.type === permission
-    );
-
-    if (savedPermission) {
-        // Use saved decision - respond to main process
-        window.electronAPI.respondPermission({ requestId, allowed: savedPermission.allowed });
-
-        // Save permission if it was a new request (not already saved)
-        // Already saved, so nothing to do
-    } else {
-        // Show permission modal
-        const permissionRequest = {
-            requestId: requestId,
-            permissionType: permission,
-            url: url
-        };
-        showPermissionModal(permissionRequest);
-    }
-}
-
-function showPermissionModal(request) {
-    const modal = document.getElementById('permModal');
-    const urlDisplay = document.getElementById('permUrl');
-    const typeDisplay = document.getElementById('permType');
-
-    // Permission type labels
-    const permissionLabels = {
-        'media': 'Access your camera/microphone',
-        'geolocation': 'Access your location',
-        'notifications': 'Show notifications',
-        'midi': 'Access MIDI devices',
-        'clipboard': 'Access clipboard'
-    };
-
-    urlDisplay.textContent = request.url;
-    typeDisplay.textContent = permissionLabels[request.permissionType] || request.permissionType;
-
-    modal.dataset.requestId = request.requestId;
-    modal.dataset.permissionType = request.permissionType;
-    modal.dataset.url = request.url;
-
-    // Show "Remember this choice" option
-    document.getElementById('permRemember').value = 'false';
-    modal.style.display = 'flex';
-}
-
-function respondPermission(allowed) {
-    const modal = document.getElementById('permModal');
-    const requestId = modal.dataset.requestId;
-    const permissionType = modal.dataset.permissionType;
-    const url = modal.dataset.url;
-    const remember = document.getElementById('permRemember').value === 'true';
-
-    // Send response to main process
-    window.electronAPI.respondPermission({ requestId, allowed });
-
-    // Save permission if "Remember" is checked
-    if (remember) {
-        let domain;
-        try {
-            domain = new URL(url).hostname;
-        } catch (e) {
-            domain = url;
-        }
-
-        // Check if we already have this permission saved
-        const existingIndex = permissions.findIndex(p =>
-            p.domain === domain && p.type === permissionType
-        );
-
-        if (existingIndex === -1) {
-            // Add new permission
-            permissions.push({
-                domain: domain,
-                type: permissionType,
-                allowed: allowed,
-                timestamp: Date.now()
-            });
-            savePermissions();
-        }
-    }
-
-    modal.style.display = 'none';
-}
-
-function togglePermissionsPanel() {
-    const modal = document.getElementById('permissionsPanel');
-    if (modal.style.display === 'flex') {
-        modal.style.display = 'none';
-    } else {
-        modal.style.display = 'flex';
-        renderPermissionsList();
-    }
-}
-
-function renderPermissionsList() {
-    const list = document.getElementById('permList');
-    list.innerHTML = '';
-
-    if (permissions.length === 0) {
-        list.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No saved permissions</div>';
+function deleteWorkspace(id) {
+    // Prevent deleting the only workspace
+    if (state.workspaces.length <= 1) {
+        alert("You cannot delete the last workspace.");
         return;
     }
 
-    permissions.forEach((perm, index) => {
-        const div = document.createElement('div');
-        div.className = 'perm-item';
-        div.innerHTML = `
-            <div>
-                <div style="font-weight: bold; color: ${perm.allowed ? '#27c93f' : '#ff5f56'}">
-                    ${perm.allowed ? 'Allowed' : 'Denied'}
-                </div>
-                <div style="font-size: 0.8rem; color: #aaa;">${perm.type}</div>
-                <div style="font-size: 0.7rem; color: #666;">${perm.domain}</div>
-            </div>
-            <button class="btn-delete" onclick="deletePermission(${index})">
-                <i class="fa-solid fa-trash"></i>
-            </button>
-        `;
-        list.appendChild(div);
-    });
-}
+    const index = state.workspaces.findIndex(w => w.id === id);
+    if (index === -1) return;
 
-function deletePermission(index) {
-    permissions.splice(index, 1);
-    savePermissions();
-    renderPermissionsList();
-}
+    // 1. Remove from array
+    state.workspaces.splice(index, 1);
 
-function clearAllPermissions() {
-    if (confirm('Are you sure you want to clear all saved permissions?')) {
-        permissions = [];
-        savePermissions();
-        renderPermissionsList();
-    }
-}
+    // 2. Handle Active Workspace Switch
+    if (state.activeWorkspaceId === id) {
+        // Switch to the first available workspace
+        state.activeWorkspaceId = state.workspaces[0].id;
 
-// --- DOWNLOAD MANAGEMENT ---
-async function startDownload(url, filename = null) {
-  // Just trigger the download - the main process will handle it via will-download event
-  // Downloads are initiated automatically when the webview encounters a downloadable file
-  console.log('Download initiated for:', url);
-}
-
-function cancelDownload(id) {
-    window.electronAPI.cancelDownload(id);
-
-    const download = downloads.find(d => d.id === id);
-    if (download) {
-        download.state = 'cancelled';
-        saveDownloads();
-        renderDownloads();
-    }
-}
-
-function openDownload(id) {
-    const download = downloads.find(d => d.id === id);
-    if (download && download.savePath) {
-        window.electronAPI.openPath(download.savePath);
-    }
-}
-
-function showInFolder(id) {
-    const download = downloads.find(d => d.id === id);
-    if (download && download.savePath) {
-        window.electronAPI.showItemInFolder(download.savePath);
-    }
-}
-
-function deleteDownload(id) {
-    const index = downloads.findIndex(d => d.id === id);
-    if (index !== -1) {
-        downloads.splice(index, 1);
-        saveDownloads();
-        renderDownloads();
-    }
-}
-
-function clearDownloads() {
-    // Clear completed downloads
-    downloads = downloads.filter(d => d.state !== 'completed');
-    saveDownloads();
-    renderDownloads();
-}
-
-function toggleDownloadsPanel() {
-    const panel = document.getElementById('downloadsPanel');
-    if (panel.style.display === 'flex') {
-        panel.style.display = 'none';
-    } else {
-        panel.style.display = 'flex';
-        renderDownloads();
-    }
-}
-
-function renderDownloads() {
-    const list = document.getElementById('downloadsList');
-    list.innerHTML = '';
-
-    if (downloads.length === 0) {
-        list.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No downloads</div>';
-        return;
+        // Force a re-render of the new workspace tabs
+        const viewport = document.getElementById('viewport');
+        viewport.innerHTML = ''; // Clear old tabs
+        restoreTabs();
     }
 
-    downloads.forEach(download => {
-        const div = document.createElement('div');
-        div.className = 'download-item';
-
-        const statusIcon = download.state === 'completed' ? 'fa-check-circle' :
-                           download.state === 'cancelled' ? 'fa-times-circle' :
-                           download.state === 'interrupted' ? 'fa-exclamation-circle' :
-                           'fa-spinner fa-spin';
-
-        const statusColor = download.state === 'completed' ? '#27c93f' :
-                            download.state === 'cancelled' ? '#ff5f56' :
-                            download.state === 'interrupted' ? '#ffbd2e' :
-                            '#666';
-
-        const progress = download.totalBytes > 0 ?
-            Math.round((download.receivedBytes / download.totalBytes) * 100) : 0;
-
-        div.innerHTML = `
-            <div class="download-info">
-                <div class="download-filename">
-                    <i class="fa-solid ${statusIcon}" style="color: ${statusColor}; margin-right: 8px;"></i>
-                    ${download.filename}
-                </div>
-                <div class="download-meta">
-                    ${download.state === 'progressing' ?
-                        `<span>${progress}%</span>` :
-                        `<span>${download.state}</span>`
-                    }
-                    ${download.savePath ? `<span>• ${download.savePath}</span>` : ''}
-                </div>
-            </div>
-            <div class="download-actions">
-                ${download.state === 'progressing' ?
-                    `<button class="btn-icon" onclick="cancelDownload(${download.id})">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>` :
-                    download.state === 'completed' ?
-                    `<button class="btn-icon" onclick="openDownload(${download.id})" title="Open">
-                        <i class="fa-solid fa-folder-open"></i>
-                    </button>
-                    <button class="btn-icon" onclick="showInFolder(${download.id})" title="Show in Folder">
-                        <i class="fa-solid fa-folder"></i>
-                    </button>` :
-                    ''
-                }
-                <button class="btn-icon" onclick="deleteDownload(${download.id})" title="Remove">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-            </div>
-        `;
-        list.appendChild(div);
-    });
+    // 3. Save and Update UI
+    saveState();
+    renderWorkspaces();
 }
 
-// Handle download events from main process
-window.electronAPI?.onDownloadStarted?.((data) => {
-  const download = {
-    id: data.id,
-    url: data.url,
-    filename: data.filename,
-    totalBytes: data.totalBytes,
-    receivedBytes: 0,
-    state: 'progressing',
-    savePath: null,
-    timestamp: Date.now()
-  };
 
-  downloads.unshift(download);
-  saveDownloads();
-  renderDownloads();
-});
-
-window.electronAPI?.onDownloadProgress?.((progress) => {
-  const download = downloads.find(d => d.id === progress.id);
-  if (download) {
-    download.receivedBytes = progress.receivedBytes;
-    download.totalBytes = progress.totalBytes;
-    download.state = progress.state;
-
-    if (progress.savePath) {
-      download.savePath = progress.savePath;
-    }
-
-    saveDownloads();
-    renderDownloads();
-  }
-});
-
-// --- EXTENSION INSTALLATION ---
 async function installExtension() {
     // 1. Open dialog to select folder
     const path = await window.electronAPI.openDialog();
