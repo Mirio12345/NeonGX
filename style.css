@@ -8,11 +8,10 @@
     --text-main: #fff;
     --text-dim: #aaa;
     --sidebar-width: 240px;
-    /* Fixed Header Heights */
-    --header-title: 32px;
+    /* Updated Header Heights (removed title bar) */
     --header-tabs: 36px;
     --header-nav: 40px;
-    --total-header: 108px; /* 32 + 36 + 40 */
+    --total-header: 76px; /* 36 + 40 (removed 32px title bar) */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: 'Segoe UI', sans-serif; }
@@ -25,34 +24,10 @@ body {
     overflow: hidden;
 }
 
-/* --- 1. TITLE BAR (Fixed Top) --- */
-.title-bar {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    height: var(--header-title);
-    background-color: var(--bg-panel);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 15px;
-    -webkit-app-region: drag;
-    z-index: 1000;
-}
-
-.title-bar-text { font-size: 0.75rem; color: var(--text-dim); pointer-events: none; }
-
-.window-controls { -webkit-app-region: no-drag; display: flex; gap: 8px; }
-.control-btn {
-    width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer;
-}
-.btn-close { background: #ff5f56; }
-.btn-min { background: #ffbd2e; }
-.btn-max { background: #27c93f; }
-
-/* --- 2. SIDEBAR (Fixed Left, Below Title) --- */
+/* --- 2. SIDEBAR (Fixed Left, Now at Top Edge) --- */
 .sidebar {
     position: fixed;
-    top: var(--header-title); /* 32px */
+    top: 0; /* Now starts at top instead of 32px */
     left: 0; bottom: 0;
     width: var(--sidebar-width);
     background-color: var(--bg-panel);
@@ -65,7 +40,19 @@ body {
     box-shadow: 2px 0 10px rgba(0,0,0,0.5);
 }
 
-.section-title { font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 1px; }
+.section-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+}
+
+/* Draggable region for window */
+.draggable {
+    -webkit-app-region: drag;
+    cursor: move;
+}
 
 .ws-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 20px; }
 .ws-item {
@@ -75,6 +62,14 @@ body {
 .ws-item:hover { background-color: var(--bg-hover); color: #fff; }
 .ws-item.active { background-color: var(--accent); color: #fff; }
 
+/* Drag and Drop Styles for Workspaces */
+.ws-drop-indicator {
+    background-color: var(--accent) !important;
+    color: #fff !important;
+    border: 2px dashed #fff !important;
+    transform: scale(1.02);
+}
+
 .add-ws-btn {
     background: transparent; border: 1px dashed #444; color: #666; padding: 8px;
     width: 100%; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
@@ -82,16 +77,293 @@ body {
 .add-ws-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
-.history-item, .ram-item {
+
+/* Sidebar Item Wrapper for Downloads Panel */
+.sidebar-item-wrapper {
+    position: relative;
+}
+
+.history-item {
     padding: 10px; border-radius: 6px; background: var(--bg-lighter);
     cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 0.85rem;
+    position: relative;
 }
+.history-item:hover { background-color: var(--bg-hover); }
+
 .ram-value { margin-left: auto; color: var(--accent); font-weight: bold; }
+
+/* --- PERMISSION MODAL STYLES --- */
+.permission-modal {
+    width: 400px;
+    height: auto;
+    padding: 0;
+}
+
+.permission-modal .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.permission-modal .modal-header h2 {
+    font-size: 1.2rem;
+    color: var(--text-main);
+}
+
+.permission-modal .modal-header i {
+    color: var(--accent);
+}
+
+.permission-modal .modal-body {
+    padding: 20px;
+}
+
+.permission-text {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+.permission-type {
+    color: var(--text-main);
+    font-size: 1.1rem;
+    font-weight: 600;
+    background: var(--bg-lighter);
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.permission-modal .modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #333;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn-deny,
+.btn-allow {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: 0.2s;
+}
+
+.btn-deny {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid #444;
+}
+.btn-deny:hover {
+    background: #333;
+    color: #fff;
+    border-color: #666;
+}
+
+.btn-allow {
+    background: var(--accent);
+    color: white;
+}
+.btn-allow:hover {
+    filter: brightness(1.2);
+    transform: translateY(-1px);
+}
+
+/* --- DOWNLOADS PANEL STYLES --- */
+.downloads-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: var(--accent);
+    color: white;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.downloads-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    background: var(--bg-panel);
+    border: 1px solid #333;
+    border-radius: 8px;
+    margin-top: 5px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    z-index: 1000;
+}
+
+.downloads-header {
+    padding: 12px 15px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-lighter);
+}
+
+.downloads-header span {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.downloads-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.downloads-action-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: 0.2s;
+}
+
+.downloads-action-icon:hover {
+    background: var(--bg-hover);
+    color: #fff;
+}
+
+.downloads-list {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 340px;
+}
+
+.downloads-empty {
+    padding: 30px 15px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+}
+
+.download-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid #222;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    transition: background 0.2s;
+}
+
+.download-item:hover {
+    background: var(--bg-hover);
+}
+
+.download-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.download-filename {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-main);
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.download-status-icon {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+}
+
+.download-details {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+.download-time {
+    color: #666;
+}
+
+.download-actions {
+    display: flex;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.download-action-btn {
+    background: transparent;
+    border: 1px solid #444;
+    color: var(--text-dim);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+    padding: 0;
+}
+
+.download-action-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.download-progress-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #333;
+}
+
+.download-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+    border-radius: 1px;
+}
+
+/* Scrollbar for downloads list */
+.downloads-list::-webkit-scrollbar {
+    width: 6px;
+}
+.downloads-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.downloads-list::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 3px;
+}
+.downloads-list::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
 
 /* --- 3. UI OVERLAY (Tabs & Nav) --- */
 .ui-overlay {
     position: fixed;
-    top: var(--header-title); /* 32px */
+    top: 0; /* Now starts at top instead of 32px */
     left: var(--sidebar-width); /* 240px */
     right: 0;
     z-index: 800; /* Above webview */
@@ -103,11 +375,12 @@ body {
     height: var(--header-tabs);
     background-color: var(--bg-panel);
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     padding: 0 5px;
     gap: 2px;
     overflow-x: auto;
     border-bottom: 1px solid #333;
+    position: relative;
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 
@@ -122,6 +395,25 @@ body {
 .tab:hover { background-color: var(--bg-hover); color: #fff; }
 .tab.active { background-color: var(--bg-hover); color: #fff; border-bottom: 2px solid var(--accent); }
 
+/* Drag and Drop Styles for Tabs */
+.tab[draggable="true"] {
+    cursor: grab;
+}
+
+.tab[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.tab-dragging {
+    opacity: 0.4;
+    transform: scale(0.95);
+}
+
+.tab-drop-indicator {
+    border-left: 2px solid var(--accent) !important;
+    padding-left: 6px !important;
+}
+
 .tab-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px; }
 .tab-close { margin-left: auto; padding: 2px 6px; border-radius: 4px; opacity: 0; }
 .tab:hover .tab-close { opacity: 1; }
@@ -129,6 +421,53 @@ body {
 
 .new-tab-btn { color: var(--text-dim); cursor: pointer; padding: 5px; margin-bottom: 2px; }
 .new-tab-btn:hover { color: white; }
+
+/* --- WINDOW CONTROLS IN TAB BAR (Modern Windows/Opera GX Style) --- */
+.window-controls-container {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: auto;
+    padding-right: 0;
+    -webkit-app-region: no-drag;
+}
+
+.window-control {
+    width: 46px;
+    height: 32px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 10px;
+    border-radius: 0;
+}
+
+.window-control:hover {
+    background: var(--bg-hover);
+    color: #fff;
+}
+
+.window-control i {
+    width: 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Special hover for close button with red accent */
+.btn-close:hover {
+    background: #e81123;
+}
+
+.btn-close:hover i {
+    color: #fff;
+}
 
 /* NAV BAR */
 .nav-bar {
@@ -162,24 +501,24 @@ body {
 /* --- 4. VIEWPORT (The "100% Height" Fix) --- */
 .viewport {
     position: fixed;
-    /* 
+    /*
        FIXED POSITIONING:
-       Start exactly below all headers (32 + 36 + 40 = 108px)
+       Start exactly below all headers (36 + 40 = 76px)
        Start exactly to the right of sidebar (240px)
        Go all the way to edges (0)
     */
-    top: var(--total-header); 
+    top: var(--total-header);
     left: var(--sidebar-width);
     right: 0;
     bottom: 0;
-    
+
     background-color: #000;
     z-index: 1; /* Lowest layer */
     overflow: hidden;
 }
 
-/* 
-   WEBVIEW: 
+/*
+   WEBVIEW:
    Height 100% of the viewport container.
    No flexbox, no calculations, just fill the box.
 */
@@ -215,7 +554,7 @@ webview:not(.active) {
 /* --- FIX 2 & 6: HISTORY MODAL & CONTEXT MENU STYLES --- */
 .modal-overlay {
     position: fixed;
-    top: 32px; left: var(--sidebar-width);
+    top: 0; left: var(--sidebar-width); /* Changed from 32px to 0 */
     right: 0; bottom: 0;
     background: rgba(0,0,0,0.7);
     z-index: 2000;
@@ -264,35 +603,62 @@ webview:not(.active) {
 .history-time { font-size: 0.7rem; color: #666; margin-bottom: 4px; }
 .history-url { color: var(--text-dim); }
 
-/* CONTEXT MENU */
+/* --- REWRITTEN CONTEXT MENU --- */
 .context-menu {
-    position: fixed; /* RELATIVE TO SCREEN */
+    position: fixed;
     background: #2c2e33;
     border: 1px solid #444;
-    border-radius: 4px;
-    width: 200px;
+    border-radius: 6px;
+    width: 240px;
     display: none;
     z-index: 9999; /* ABOVE EVERYTHING (Even Title Bar) */
-    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-    padding: 5px 0; /* Add padding inside menu */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+    padding: 4px 0;
+    min-width: 180px;
+    max-width: 280px;
+    user-select: none;
 }
 
 .menu-item {
-    padding: 10px 15px;
+    padding: 10px 16px;
     cursor: pointer;
-    color: white;
+    color: #fff;
     font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.15s ease;
+    position: relative;
 }
-.menu-item:hover { background: var(--accent); }
+
+.menu-item i {
+    width: 16px;
+    color: var(--text-dim);
+    text-align: center;
+}
+
+.menu-item:hover {
+    background: var(--accent);
+    color: #fff;
+    transform: translateX(2px);
+}
+
+.menu-item:hover i {
+    color: #fff;
+}
+
 .menu-divider {
-    height: 1px; background: #444; margin: 5px 0;
+    height: 1px;
+    background: #444;
+    margin: 4px 0;
+    padding: 0 16px;
 }
 
 /* --- RESIZE HANDLE --- */
 .resize-handle {
     position: absolute;
-    top: 0; 
-    right: 0; 
+    top: 0;
+    right: 0;
     bottom: 0;
     width: 5px;
     cursor: ew-resize; /* Changes mouse icon to arrows */

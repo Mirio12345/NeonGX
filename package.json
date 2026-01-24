@@ -1,7 +1,7 @@
 {
   "name": "neon-gx-browser",
   "version": "1.0.0",
-  "description": "A custom browser built with Electron.",
+  "description": "A custom browser built with Electron with permission and download management.",
   "main": "main.js",
   "author": "Mirio",
   "scripts": {

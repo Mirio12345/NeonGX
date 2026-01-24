@@ -6,8 +6,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
     close: () => ipcRenderer.send('window-close'),
-    
-    // NEW: Extension functions
+
+    // Extension functions
     openDialog: () => ipcRenderer.invoke('dialog:openDirectory'),
-    installExtension: (path) => ipcRenderer.invoke('install-extension', path)
+    installExtension: (path) => ipcRenderer.invoke('install-extension', path),
+
+    // Permission Management
+    onPermissionRequest: (callback) => {
+        ipcRenderer.on('permission-request', (event, data) => callback(data));
+    },
+    respondToPermission: (requestId, allowed) => {
+        ipcRenderer.send('permission-response', { requestId, allowed });
+    },
+    getPermissionPreferences: () => ipcRenderer.invoke('get-permission-preferences'),
+    setPermissionPreference: (origin, permission, allowed) => {
+        return ipcRenderer.invoke('set-permission-preference', { origin, permission, allowed });
+    },
+
+    // Download Management
+    onDownloadStarted: (callback) => {
+        ipcRenderer.on('download-started', (event, data) => callback(data));
+    },
+    onDownloadUpdated: (callback) => {
+        ipcRenderer.on('download-updated', (event, data) => callback(data));
+    },
+    onDownloadCompleted: (callback) => {
+        ipcRenderer.on('download-completed', (event, data) => callback(data));
+    },
+    getActiveDownloads: () => ipcRenderer.invoke('get-active-downloads'),
+    cancelDownload: (downloadId) => ipcRenderer.invoke('cancel-download', downloadId),
+    openDownloadsFolder: () => ipcRenderer.invoke('open-downloads-folder'),
+    openDownloadedFile: (filePath) => ipcRenderer.invoke('open-downloaded-file', filePath),
+    clearCompletedDownloads: () => ipcRenderer.invoke('clear-completed-downloads'),
+
+    // Helper to remove all listeners
+    removeAllListeners: () => {
+        ipcRenderer.removeAllListeners('permission-request');
+        ipcRenderer.removeAllListeners('download-started');
+        ipcRenderer.removeAllListeners('download-updated');
+        ipcRenderer.removeAllListeners('download-completed');
+    }
 });

@@ -13,7 +13,7 @@
         get: () => 'Gecko',
     });
     Object.defineProperty(navigator, 'vendor', {
-        get: () => '', 
+        get: () => '',
     });
 
     Object.defineProperty(navigator, 'plugins', {
@@ -53,7 +53,7 @@
         const style = document.createElement('style');
         style.textContent = `
             /* Hide Homepage Ads (Banners, Sidebar) */
-            ytd-display-ad-renderer, ytd-ad-slot-renderer, #masthead-ad, 
+            ytd-display-ad-renderer, ytd-ad-slot-renderer, #masthead-ad,
             #player-ads, .ytp-ad-overlay-slot {
                 display: none !important;
             }
