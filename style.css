@@ -8,11 +8,10 @@
     --text-main: #fff;
     --text-dim: #aaa;
     --sidebar-width: 240px;
-    /* Fixed Header Heights */
-    --header-title: 32px;
+    /* Updated Header Heights (removed title bar) */
     --header-tabs: 36px;
     --header-nav: 40px;
-    --total-header: 108px; /* 32 + 36 + 40 */
+    --total-header: 76px; /* 36 + 40 (removed 32px title bar) */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: 'Segoe UI', sans-serif; }
@@ -25,34 +24,10 @@ body {
     overflow: hidden;
 }
 
-/* --- 1. TITLE BAR (Fixed Top) --- */
-.title-bar {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    height: var(--header-title);
-    background-color: var(--bg-panel);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 15px;
-    -webkit-app-region: drag;
-    z-index: 1000;
-}
-
-.title-bar-text { font-size: 0.75rem; color: var(--text-dim); pointer-events: none; }
-
-.window-controls { -webkit-app-region: no-drag; display: flex; gap: 8px; }
-.control-btn {
-    width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer;
-}
-.btn-close { background: #ff5f56; }
-.btn-min { background: #ffbd2e; }
-.btn-max { background: #27c93f; }
-
-/* --- 2. SIDEBAR (Fixed Left, Below Title) --- */
+/* --- 2. SIDEBAR (Fixed Left, Now at Top Edge) --- */
 .sidebar {
     position: fixed;
-    top: var(--header-title); /* 32px */
+    top: 0; /* Now starts at top instead of 32px */
     left: 0; bottom: 0;
     width: var(--sidebar-width);
     background-color: var(--bg-panel);
@@ -65,7 +40,19 @@ body {
     box-shadow: 2px 0 10px rgba(0,0,0,0.5);
 }
 
-.section-title { font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 1px; }
+.section-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+}
+
+/* Draggable region for window */
+.draggable {
+    -webkit-app-region: drag;
+    cursor: move;
+}
 
 .ws-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 20px; }
 .ws-item {
@@ -368,7 +355,7 @@ body {
 /* --- 3. UI OVERLAY (Tabs & Nav) --- */
 .ui-overlay {
     position: fixed;
-    top: var(--header-title); /* 32px */
+    top: 0; /* Now starts at top instead of 32px */
     left: var(--sidebar-width); /* 240px */
     right: 0;
     z-index: 800; /* Above webview */
@@ -380,11 +367,12 @@ body {
     height: var(--header-tabs);
     background-color: var(--bg-panel);
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     padding: 0 5px;
     gap: 2px;
     overflow-x: auto;
     border-bottom: 1px solid #333;
+    position: relative;
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 
@@ -406,6 +394,53 @@ body {
 
 .new-tab-btn { color: var(--text-dim); cursor: pointer; padding: 5px; margin-bottom: 2px; }
 .new-tab-btn:hover { color: white; }
+
+/* --- WINDOW CONTROLS IN TAB BAR (Modern Windows/Opera GX Style) --- */
+.window-controls-container {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: auto;
+    padding-right: 0;
+    -webkit-app-region: no-drag;
+}
+
+.window-control {
+    width: 46px;
+    height: 32px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 10px;
+    border-radius: 0;
+}
+
+.window-control:hover {
+    background: var(--bg-hover);
+    color: #fff;
+}
+
+.window-control i {
+    width: 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Special hover for close button with red accent */
+.btn-close:hover {
+    background: #e81123;
+}
+
+.btn-close:hover i {
+    color: #fff;
+}
 
 /* NAV BAR */
 .nav-bar {
@@ -441,7 +476,7 @@ body {
     position: fixed;
     /*
        FIXED POSITIONING:
-       Start exactly below all headers (32 + 36 + 40 = 108px)
+       Start exactly below all headers (36 + 40 = 76px)
        Start exactly to the right of sidebar (240px)
        Go all the way to edges (0)
     */
@@ -492,7 +527,7 @@ webview:not(.active) {
 /* --- FIX 2 & 6: HISTORY MODAL & CONTEXT MENU STYLES --- */
 .modal-overlay {
     position: fixed;
-    top: 32px; left: var(--sidebar-width);
+    top: 0; left: var(--sidebar-width); /* Changed from 32px to 0 */
     right: 0; bottom: 0;
     background: rgba(0,0,0,0.7);
     z-index: 2000;

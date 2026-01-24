@@ -43,23 +43,13 @@
         </div>
     </div>
 
-    <!-- 1. Title Bar -->
-    <div class="title-bar">
-        <div class="title-bar-text">NeonGX Browser</div>
-        <div class="window-controls">
-            <button class="control-btn btn-min" onclick="window.electronAPI.minimize()"></button>
-            <button class="control-btn btn-max" onclick="window.electronAPI.maximize()"></button>
-            <button class="control-btn btn-close" onclick="window.electronAPI.close()"></button>
-        </div>
-    </div>
-
-    <!-- 2. Sidebar -->
+    <!-- 2. Sidebar (Now at top edge) -->
     <aside class="sidebar">
         <!-- ADD THIS: The Drag Handle -->
         <div id="resize-handle" class="resize-handle"></div>
 
         <div>
-            <div class="section-title">Workspaces</div>
+            <div class="section-title draggable">Workspaces</div>
             <div class="ws-list" id="wsList">
                 <!-- Workspaces injected here -->
             </div>
@@ -111,8 +101,21 @@
 
         <!-- UI Overlay -->
         <div class="ui-overlay">
+            <!-- Tab Bar with Window Controls -->
             <div class="tab-bar" id="tabBar">
                 <div class="new-tab-btn" onclick="createTab()"><i class="fa-solid fa-plus"></i></div>
+                <!-- Window Controls -->
+                <div class="window-controls-container">
+                    <button class="window-control btn-min" onclick="window.electronAPI.minimize()" title="Minimize">
+                        <i class="fa-solid fa-minus"></i>
+                    </button>
+                    <button class="window-control btn-max" onclick="window.electronAPI.maximize()" title="Maximize">
+                        <i class="fa-regular fa-square"></i>
+                    </button>
+                    <button class="window-control btn-close" onclick="window.electronAPI.close()" title="Close">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
 
             <nav class="nav-bar">

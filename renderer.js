@@ -936,6 +936,7 @@ function switchTab(id) {
 function renderTabs() {
     const bar = document.getElementById('tabBar');
     const btn = bar.querySelector('.new-tab-btn');
+    const windowControls = bar.querySelector('.window-controls-container');
     bar.innerHTML = '';
 
     const ws = getCurrentWorkspace();
@@ -950,6 +951,7 @@ function renderTabs() {
         bar.appendChild(el);
     });
     bar.appendChild(btn);
+    bar.appendChild(windowControls);
 }
 
 // --- NAVIGATION ---
