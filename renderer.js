@@ -797,6 +797,7 @@ function renderWorkspaces() {
     state.workspaces.forEach(ws => {
         const div = document.createElement('div');
         div.className = `ws-item ${ws.id === state.activeWorkspaceId ? 'active' : ''}`;
+        div.setAttribute('data-workspace-id', ws.id);
 
         // Add delete icon (prevent click propagation so it doesn't switch workspace)
         div.innerHTML = `
@@ -806,6 +807,12 @@ function renderWorkspaces() {
         `;
 
         div.onclick = () => switchWorkspace(ws.id);
+
+        // Drag and Drop Events for Moving Tabs to Workspaces
+        div.addEventListener('dragover', handleWorkspaceDragOver);
+        div.addEventListener('dragleave', handleWorkspaceDragLeave);
+        div.addEventListener('drop', handleWorkspaceDrop);
+
         list.appendChild(div);
     });
 }
@@ -933,6 +940,198 @@ function switchTab(id) {
     saveState();
 }
 
+// --- DRAG AND DROP FOR TABS ---
+
+let draggedTabId = null;
+let draggedTabWorkspaceId = null;
+
+// Handle starting to drag a tab
+function handleTabDragStart(e) {
+    draggedTabId = parseInt(e.target.getAttribute('data-tab-id'));
+    draggedTabWorkspaceId = state.activeWorkspaceId;
+
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedTabId.toString());
+
+    // Add dragging class for visual feedback
+    e.target.classList.add('tab-dragging');
+
+    // Play click sound
+    playClickSound();
+}
+
+// Handle drag end
+function handleTabDragEnd(e) {
+    e.target.classList.remove('tab-dragging');
+
+    // Clean up any drop indicators
+    document.querySelectorAll('.tab-drop-indicator').forEach(el => {
+        el.classList.remove('tab-drop-indicator');
+    });
+
+    draggedTabId = null;
+    draggedTabWorkspaceId = null;
+}
+
+// Handle dragging over another tab (for reordering)
+function handleTabDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const targetTab = e.target.closest('.tab');
+    if (!targetTab) return;
+
+    const targetTabId = parseInt(targetTab.getAttribute('data-tab-id'));
+
+    // Don't show indicator if dragging over itself
+    if (targetTabId === draggedTabId) return;
+
+    // Remove all existing indicators
+    document.querySelectorAll('.tab-drop-indicator').forEach(el => {
+        el.classList.remove('tab-drop-indicator');
+    });
+
+    // Add visual indicator
+    targetTab.classList.add('tab-drop-indicator');
+}
+
+// Handle drag leaving a tab
+function handleTabDragLeave(e) {
+    const targetTab = e.target.closest('.tab');
+    if (targetTab) {
+        targetTab.classList.remove('tab-drop-indicator');
+    }
+}
+
+// Handle dropping a tab on another tab (for reordering)
+function handleTabDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const targetTab = e.target.closest('.tab');
+    if (!targetTab) return;
+
+    const targetTabId = parseInt(targetTab.getAttribute('data-tab-id'));
+    const targetTabWorkspaceId = state.activeWorkspaceId;
+
+    // Don't do anything if dropping on itself or different workspaces
+    if (targetTabId === draggedTabId || targetTabWorkspaceId !== draggedTabWorkspaceId) {
+        targetTab.classList.remove('tab-drop-indicator');
+        return;
+    }
+
+    const ws = getCurrentWorkspace();
+    const draggedIndex = ws.tabs.findIndex(t => t.id === draggedTabId);
+    const targetIndex = ws.tabs.findIndex(t => t.id === targetTabId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+        targetTab.classList.remove('tab-drop-indicator');
+        return;
+    }
+
+    // Remove tab from old position
+    const [tab] = ws.tabs.splice(draggedIndex, 1);
+
+    // Insert at new position
+    // Adjust index if dragging from right to left
+    const insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    ws.tabs.splice(insertIndex, 0, tab);
+
+    // Clean up
+    targetTab.classList.remove('tab-drop-indicator');
+
+    // Re-render
+    renderTabs();
+    saveState();
+
+    playClickSound();
+}
+
+// --- DRAG AND DROP FOR WORKSPACES ---
+
+// Handle dragging over a workspace (for moving tabs between workspaces)
+function handleWorkspaceDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const targetWs = e.target.closest('.ws-item');
+    if (!targetWs) return;
+
+    const targetWsId = parseInt(targetWs.getAttribute('data-workspace-id'));
+
+    // Don't show indicator if dragging to same workspace
+    if (targetWsId === draggedTabWorkspaceId) return;
+
+    targetWs.classList.add('ws-drop-indicator');
+}
+
+// Handle drag leaving a workspace
+function handleWorkspaceDragLeave(e) {
+    const targetWs = e.target.closest('.ws-item');
+    if (targetWs) {
+        targetWs.classList.remove('ws-drop-indicator');
+    }
+}
+
+// Handle dropping a tab on a workspace (for moving to different workspace)
+function handleWorkspaceDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedTabId) return;
+
+    const targetWs = e.target.closest('.ws-item');
+    if (!targetWs) return;
+
+    const targetWsId = parseInt(targetWs.getAttribute('data-workspace-id'));
+
+    // Don't do anything if same workspace
+    if (targetWsId === draggedTabWorkspaceId) {
+        targetWs.classList.remove('ws-drop-indicator');
+        return;
+    }
+
+    // Find source and destination workspaces
+    const sourceWs = state.workspaces.find(w => w.id === draggedTabWorkspaceId);
+    const destWs = state.workspaces.find(w => w.id === targetWsId);
+
+    if (!sourceWs || !destWs) return;
+
+    // Find and remove tab from source workspace
+    const tabIndex = sourceWs.tabs.findIndex(t => t.id === draggedTabId);
+    if (tabIndex === -1) {
+        targetWs.classList.remove('ws-drop-indicator');
+        return;
+    }
+
+    const [tab] = sourceWs.tabs.splice(tabIndex, 1);
+
+    // Add tab to destination workspace
+    destWs.tabs.push(tab);
+
+    // Clean up
+    targetWs.classList.remove('ws-drop-indicator');
+
+    // If we moved the active tab, switch to it in the new workspace
+    if (state.activeTabId === draggedTabId) {
+        switchWorkspace(targetWsId);
+        state.activeTabId = tab.id;
+    }
+
+    // If source workspace is now empty and was active, create a new tab there
+    if (sourceWs.tabs.length === 0 && sourceWs.id === state.activeWorkspaceId) {
+        createTab('https://www.google.com');
+    }
+
+    // Re-render both tabs and workspaces
+    renderTabs();
+    renderWorkspaces();
+    saveState();
+
+    playClickSound();
+}
+
+
 function renderTabs() {
     const bar = document.getElementById('tabBar');
     const btn = bar.querySelector('.new-tab-btn');
@@ -940,14 +1139,25 @@ function renderTabs() {
     bar.innerHTML = '';
 
     const ws = getCurrentWorkspace();
-    ws.tabs.forEach(tab => {
+    ws.tabs.forEach((tab, index) => {
         const el = document.createElement('div');
         el.className = `tab ${tab.id === state.activeTabId ? 'active' : ''}`;
+        el.setAttribute('draggable', 'true');
+        el.setAttribute('data-tab-id', tab.id);
+        el.setAttribute('data-tab-index', index);
         el.innerHTML = `
             <span class="tab-title">${tab.title}</span>
             <span class="tab-close" onclick="closeTab(event, ${tab.id})"><i class="fa-solid fa-xmark"></i></span>
         `;
         el.onclick = () => switchTab(tab.id);
+
+        // Drag and Drop Events for Tab Reordering
+        el.addEventListener('dragstart', handleTabDragStart);
+        el.addEventListener('dragend', handleTabDragEnd);
+        el.addEventListener('dragover', handleTabDragOver);
+        el.addEventListener('drop', handleTabDrop);
+        el.addEventListener('dragleave', handleTabDragLeave);
+
         bar.appendChild(el);
     });
     bar.appendChild(btn);

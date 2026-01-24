@@ -62,6 +62,14 @@ body {
 .ws-item:hover { background-color: var(--bg-hover); color: #fff; }
 .ws-item.active { background-color: var(--accent); color: #fff; }
 
+/* Drag and Drop Styles for Workspaces */
+.ws-drop-indicator {
+    background-color: var(--accent) !important;
+    color: #fff !important;
+    border: 2px dashed #fff !important;
+    transform: scale(1.02);
+}
+
 .add-ws-btn {
     background: transparent; border: 1px dashed #444; color: #666; padding: 8px;
     width: 100%; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
@@ -386,6 +394,25 @@ body {
 }
 .tab:hover { background-color: var(--bg-hover); color: #fff; }
 .tab.active { background-color: var(--bg-hover); color: #fff; border-bottom: 2px solid var(--accent); }
+
+/* Drag and Drop Styles for Tabs */
+.tab[draggable="true"] {
+    cursor: grab;
+}
+
+.tab[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.tab-dragging {
+    opacity: 0.4;
+    transform: scale(0.95);
+}
+
+.tab-drop-indicator {
+    border-left: 2px solid var(--accent) !important;
+    padding-left: 6px !important;
+}
 
 .tab-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px; }
 .tab-close { margin-left: auto; padding: 2px 6px; border-radius: 4px; opacity: 0; }
