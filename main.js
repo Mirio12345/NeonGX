@@ -6,6 +6,7 @@ const path = require('path');
 let mainWindow;
 let pendingPermissionRequest = null;
 let activeDownloads = new Map();
+const downloadItems = new Map();
 
 function createWindow() {
   // FIX: Check if window already exists!
@@ -64,7 +65,9 @@ webviewSession.cookies.set({
   name: 'test_cookie',
   value: '1',
   domain: '.google.com'
-}).catch(() => {});
+}).catch(err => {
+  console.log('Failed to set Google cookie:', err);
+});
 
   // 2. MODIFY REQUEST HEADERS TO MIMIC FIREFOX
   webviewSession.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -80,6 +83,64 @@ webviewSession.cookies.set({
 
     callback({ requestHeaders: details.requestHeaders });
   }, { urls: ['<all_urls>'] });
+
+// 5. YOUTUBE-SPECIFIC AD BLOCKING (ENHANCED)
+webviewSession.webRequest.onBeforeRequest((details, callback) => {
+  const url = details.url.toLowerCase();
+  
+  // Only process YouTube URLs
+  if (!url.includes('youtube.com') && !url.includes('youtu.be') && !url.includes('googlevideo.com')) {
+    callback({});
+    return;
+  }
+
+  // Enhanced ad patterns (but still safe)
+  const youtubeAdPatterns = [
+    // Known ad servers
+    'doubleclick.net',
+    'googleads.g.doubleclick.net',
+    'googleadservices.com',
+    'googlesyndication.com',
+    
+    // YouTube ad endpoints
+    'youtube.com/pagead/',
+    'youtube.com/api/stats/ads',
+    'youtube.com/ptracking',
+    'youtube.com/aclk',
+    
+    // Ad click tracking
+    '/aclk',
+    '/ptracking',
+    
+    // Ad servers
+    'ad.doubleclick.net',
+    'pagead2.googlesyndication.com',
+    
+    // Rendition patterns (YouTube's ad servers)
+    /r[0-9]+---sn-.*\/adserver/,
+    /r[0-9]+---sn-.*doubleclick/,
+    
+    // Video ads (specific pattern)
+    'googlevideo.com/videoplayback?ad_',
+    'googlevideo.com/videoplayback&ad_',
+  ];
+
+  const isAd = youtubeAdPatterns.some(pattern => {
+    if (typeof pattern === 'string') {
+      return url.includes(pattern);
+    } else if (pattern instanceof RegExp) {
+      return pattern.test(url);
+    }
+    return false;
+  });
+
+  if (isAd) {
+    console.log('🚫 Blocked ad:', url.substring(0, 80));
+    callback({ cancel: true });
+  } else {
+    callback({});
+  }
+}, { urls: ['<all_urls>'] });
 
   // 3. PERMISSION MANAGEMENT
   webviewSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -106,8 +167,8 @@ webviewSession.cookies.set({
     }
   });
 
-  // 4. DOWNLOAD MANAGEMENT
-  webviewSession.on('will-download', (event, item, webContents) => {
+  // 4. DOWNLOAD MANAGEMENT (FIXED VERSION)
+webviewSession.on('will-download', (event, item, webContents) => {
     const downloadId = Date.now().toString();
     const url = item.getURL();
     const filename = item.getFilename();
@@ -118,78 +179,100 @@ webviewSession.cookies.set({
     const savePath = path.join(downloadsPath, filename);
     item.setSavePath(savePath);
 
-    // Create download item
-    const download = {
-      id: downloadId,
-      filename: filename,
-      url: url,
-      totalBytes: totalBytes,
-      receivedBytes: 0,
-      savePath: savePath,
-      state: 'progress', // 'progress', 'completed', 'cancelled', 'interrupted'
-      startTime: Date.now()
+    // Create download object - use object literal directly to avoid scoping issues
+    const downloadData = {
+        id: downloadId,
+        filename: filename,
+        url: url,
+        totalBytes: totalBytes,
+        receivedBytes: 0,
+        savePath: savePath,
+        state: 'progress',
+        startTime: Date.now()
     };
 
-    activeDownloads.set(downloadId, download);
+    // Store in activeDownloads Map
+    activeDownloads.set(downloadId, downloadData);
+    downloadItems.set(downloadId, item); 
 
     // Send download started event to renderer
     if (mainWindow) {
-      mainWindow.webContents.send('download-started', download);
+        mainWindow.webContents.send('download-started', downloadData);
     }
 
     // Track download progress
     item.on('updated', (event, state) => {
-      if (state === 'interrupted') {
-        download.state = 'interrupted';
-        download.paused = true;
-      } else if (state === 'progressing') {
-        if (item.isPaused()) {
-          download.state = 'interrupted';
-          download.paused = true;
-        } else {
-          download.state = 'progress';
-          download.receivedBytes = item.getReceivedBytes();
-          download.paused = false;
-        }
-      }
+        // Get the current download data from Map
+        const currentDownload = activeDownloads.get(downloadId);
+        if (!currentDownload) return;
 
-      // Send update to renderer
-      if (mainWindow) {
-        mainWindow.webContents.send('download-updated', download);
-      }
+        if (state === 'interrupted') {
+            currentDownload.state = 'interrupted';
+            currentDownload.paused = true;
+        } else if (state === 'progressing') {
+            if (item.isPaused()) {
+                currentDownload.state = 'interrupted';
+                currentDownload.paused = true;
+            } else {
+                currentDownload.state = 'progress';
+                currentDownload.receivedBytes = item.getReceivedBytes();
+                currentDownload.paused = false;
+            }
+        }
+
+        // Update the Map with modified data
+        activeDownloads.set(downloadId, currentDownload);
+
+        // Send update to renderer
+        if (mainWindow) {
+            mainWindow.webContents.send('download-updated', currentDownload);
+        }
     });
 
     item.on('done', (event, state) => {
-      download.state = state; // 'completed', 'cancelled', 'interrupted'
+        // Get the current download data
+        const currentDownload = activeDownloads.get(downloadId);
+        if (!currentDownload) return;
 
-      if (state === 'completed') {
-        download.receivedBytes = download.totalBytes;
-        download.endTime = Date.now();
-        download.duration = download.endTime - download.startTime;
+        currentDownload.state = state;
 
-        // Show notification
-        const { Notification } = require('electron');
-        if (Notification.isSupported()) {
-          new Notification({
-            title: 'Download Complete',
-            body: `${filename} has been downloaded successfully.`
-          }).show();
+        if (state === 'completed') {
+            currentDownload.receivedBytes = currentDownload.totalBytes;
+            currentDownload.endTime = Date.now();
+            currentDownload.duration = currentDownload.endTime - currentDownload.startTime;
+
+            // Show notification
+            const { Notification } = require('electron');
+            if (Notification.isSupported()) {
+                try {
+                    new Notification({
+                        title: 'Download Complete',
+                        body: `${currentDownload.filename} has been downloaded successfully.`
+                    }).show();
+                } catch (e) {
+                    console.log('Failed to show notification:', e);
+                }
+            }
+        } else {
+            currentDownload.endTime = Date.now();
         }
-      } else {
-        download.endTime = Date.now();
-      }
 
-      // Send completion event to renderer
-      if (mainWindow) {
-        mainWindow.webContents.send('download-completed', download);
-      }
+        // Update the Map
+        activeDownloads.set(downloadId, currentDownload);
 
-      // Remove from active downloads after some time
-      setTimeout(() => {
-        activeDownloads.delete(downloadId);
-      }, 60000); // Keep in memory for 1 minute
+        // Send completion event to renderer
+        if (mainWindow) {
+            mainWindow.webContents.send('download-completed', currentDownload);
+        }
+
+        // Remove from active downloads after some time
+        setTimeout(() => {
+            activeDownloads.delete(downloadId);
+        }, 60000);
+
+        downloadItems.delete(downloadId);
     });
-  });
+});
 
   app.on('activate', () => {
     if (mainWindow === null) {
@@ -248,12 +331,60 @@ ipcMain.handle('pause-download', async (event, downloadId) => {
   return { success: false, error: 'Pause not supported' };
 });
 
-// Cancel a download
+// Update the cancel-download handler:
 ipcMain.handle('cancel-download', async (event, downloadId) => {
-  // Since downloads are managed by the session, we need to track them differently
-  // This is a placeholder - you'd need to store the actual download item references
-  console.log('Cancel download requested:', downloadId);
-  return { success: true };
+    console.log('Cancel download requested:', downloadId);
+
+    try {
+        // Get the actual DownloadItem from our Map
+        const downloadItem = downloadItems.get(downloadId);
+
+        if (!downloadItem) {
+            console.log('Download item not found:', downloadId);
+            return { success: false, error: 'Download not found' };
+        }
+
+        // Check the download state using getState() instead of isComplete()
+        const state = downloadItem.getState();
+        console.log('Download state:', state);
+
+        if (state === 'completed') {
+            console.log('Download already complete, cannot cancel');
+            return { success: false, error: 'Download already complete' };
+        }
+
+        if (state === 'cancelled') {
+            console.log('Download already cancelled');
+            return { success: false, error: 'Download already cancelled' };
+        }
+
+        // Cancel the download
+        downloadItem.cancel();
+
+        // Update the download state in our tracking
+        const currentDownload = activeDownloads.get(downloadId);
+        if (currentDownload) {
+            currentDownload.state = 'cancelled';
+            currentDownload.endTime = Date.now();
+            activeDownloads.set(downloadId, currentDownload);
+
+            // Notify the renderer about the cancellation
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('download-updated', currentDownload);
+            }
+        }
+
+        // Clean up the item reference
+        downloadItems.delete(downloadId);
+        activeDownloads.delete(downloadId);
+
+        console.log('Download cancelled successfully:', downloadId);
+        return { success: true };
+
+    } catch (error) {
+        console.error('Error canceling download:', error);
+        return { success: false, error: error.message };
+    }
 });
 
 // Open downloads folder

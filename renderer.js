@@ -35,6 +35,18 @@ let activeDownloads = [];
 // Create audio context for sound effects
 let audioContext = null;
 
+
+// Increase EventEmitter listener limit for webviews
+if (typeof window !== 'undefined') {
+    const originalRemove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.removeEventListener = function(type, listener, options) {
+        // Ensure removal works properly
+        return originalRemove.call(this, type, listener, options);
+    };
+}
+
+
+
 function playClickSound() {
     try {
         // Create a simple click sound using Web Audio API
@@ -834,6 +846,21 @@ function createTab(url = 'https://www.google.com') {
 function restoreTabs() {
     const ws = getCurrentWorkspace();
     const viewport = document.getElementById('viewport');
+    
+    // Properly remove all existing webviews with cleanup
+    const existingWebviews = viewport.querySelectorAll('webview');
+    existingWebviews.forEach(wv => {
+        try {
+            wv.stop();
+            wv.removeEventListener('did-navigate');
+            wv.removeEventListener('page-title-updated');
+            wv.removeEventListener('context-menu');
+            wv.removeEventListener('ipc-message');
+        } catch (e) {
+            // Webview might already be destroyed
+        }
+    });
+    
     viewport.innerHTML = '';
 
     ws.tabs.forEach(tab => {
@@ -912,7 +939,17 @@ function closeTab(e, id) {
     if (idx === -1) return;
 
     const wv = document.getElementById(`view-${id}`);
-    if (wv) wv.remove();
+    
+    // Cleanup webview properly before removing
+    if (wv) {
+        try {
+            wv.stop();
+            wv.removeAllListeners();
+        } catch (e) {
+            // Webview might already be destroyed
+        }
+        wv.remove();
+    }
 
     ws.tabs.splice(idx, 1);
 
