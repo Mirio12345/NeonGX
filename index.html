@@ -86,8 +86,8 @@
             </div>
 
             <!-- NEW: Add Extension Button -->
-            <div class="history-item" onclick="installExtension()">
-                <i class="fa-solid fa-puzzle-piece"></i> Add Extension
+            <div class="history-item" onclick="openPermissionsModal()">
+                <i class="fa-solid fa-shield-halved"></i> Permissions & Cookies
             </div>
 
             <div class="history-item" onclick="toggleHistory()">
@@ -154,5 +154,58 @@
     </div>
 
     <script src="renderer.js"></script>
+
+    <!-- Permissions & Cookies Management Modal -->
+<div id="permissionsModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content permissions-modal">
+        <div class="modal-header">
+            <h2><i class="fa-solid fa-shield-halved"></i> Permissions & Cookies</h2>
+            <button class="close-btn" onclick="togglePermissionsModal()">&times;</button>
+        </div>
+        
+        <div class="modal-body">
+            <div class="permissions-tabs">
+                <button class="tab-btn active" data-tab="cookies" onclick="switchPermissionsTab('cookies')">
+                    <i class="fa-solid fa-cookie"></i> Cookies
+                </button>
+                <button class="tab-btn" data-tab="permissions" onclick="switchPermissionsTab('permissions')">
+                    <i class="fa-solid fa-lock"></i> Permissions
+                </button>
+            </div>
+
+            <!-- Cookies Tab -->
+            <div id="cookiesTab" class="tab-content active">
+                <div class="cookies-controls">
+                    <div class="cookies-input-group">
+                        <input type="text" id="cookieDomainInput" placeholder="Enter domain (e.g., youtube.com)">
+                        <button onclick="searchCookies()">Search</button>
+                    </div>
+                    <div class="cookies-actions">
+                        <button onclick="clearAllCookies()" class="btn-danger">
+                            <i class="fa-solid fa-trash"></i> Clear All Cookies
+                        </button>
+                        <button onclick="clearBrowserData()" class="btn-danger">
+                            <i class="fa-solid fa-broom"></i> Clear All Data
+                        </button>
+                    </div>
+                </div>
+                <div class="cookies-list" id="cookiesList">
+                    <div class="empty-state">Loading cookies...</div>
+                </div>
+            </div>
+
+            <!-- Permissions Tab -->
+            <div id="permissionsTab" class="tab-content">
+                <div class="permissions-info">
+                    <h3>Permission Preferences</h3>
+                    <p>Your saved permission preferences for websites:</p>
+                </div>
+                <div class="permissions-list" id="permissionsList">
+                    <div class="empty-state">No saved permissions</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>

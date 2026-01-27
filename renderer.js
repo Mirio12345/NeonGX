@@ -309,29 +309,23 @@ function getCurrentPageTitle() {
 }
 
 // Show context menu at correct position
+// Show context menu at correct position
 function showContextMenu(e, tabId = null) {
-    console.log('Context menu event received:', e);
-    console.log('Tab ID:', tabId);
-
     e.preventDefault();
 
     const menu = document.getElementById('contextMenu');
-    const viewport = document.getElementById('viewport');
-
-    // Get viewport bounds
-    const viewportRect = viewport.getBoundingClientRect();
-
-    // Calculate position - add viewport offset
-    let x = e.params.x + viewportRect.left;
-    let y = e.params.y + viewportRect.top;
 
     // Store context data
     contextLinkUrl = e.params.linkURL || null;
-    contextImageUrl = e.params.srcURL || e.srcElement?.src || null;
+    contextImageUrl = e.params.srcURL || null;
     contextWebviewId = tabId || state.activeTabId;
 
     // Update menu items based on context
     updateContextMenuItems(e);
+
+    // Use coordinates directly - NO offsets needed!
+    let x = e.params.x;
+    let y = e.params.y;
 
     // Position menu with boundary checking
     const menuWidth = 240;
@@ -352,10 +346,8 @@ function showContextMenu(e, tabId = null) {
     menu.style.top = `${y}px`;
     menu.style.display = 'block';
 
-    // Play click sound
     playClickSound();
 }
-
 // Update context menu items based on what was clicked
 function updateContextMenuItems(e) {
     const menu = document.getElementById('contextMenu');
@@ -1286,18 +1278,194 @@ function deleteWorkspace(id) {
 }
 
 
-async function installExtension() {
-    // 1. Open dialog to select folder
-    const path = await window.electronAPI.openDialog();
 
-    if (path) {
-        // 2. Try to install
-        const result = await window.electronAPI.installExtension(path);
+// ============================================
+// PERMISSIONS & COOKIES MANAGEMENT
+// ============================================
 
-        if (result.success) {
-            alert(`Extension Loaded! ID: ${result.id}\n\nNote: You likely need to RESTART the app for it to work on webpages.`);
-        } else {
-            alert("Failed to load extension: " + result.error);
+// Toggle permissions modal
+function openPermissionsModal() {
+    const modal = document.getElementById('permissionsModal');
+    modal.style.display = 'flex';
+    
+    // Load cookies by default
+    loadCookies();
+    loadPermissions();
+}
+
+function togglePermissionsModal() {
+    document.getElementById('permissionsModal').style.display = 'none';
+}
+
+// Switch between cookies and permissions tabs
+function switchPermissionsTab(tab) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === tab + 'Tab');
+    });
+    
+    if (tab === 'cookies') {
+        loadCookies();
+    } else {
+        loadPermissions();
+    }
+}
+
+// Load all cookies
+async function loadCookies(domainFilter = '') {
+    const list = document.getElementById('cookiesList');
+    
+    try {
+        const cookies = await window.electronAPI.getCookies(domainFilter);
+        
+        if (cookies.length === 0) {
+            list.innerHTML = '<div class="empty-state">No cookies found</div>';
+            return;
         }
+        
+        // Group by domain
+        const grouped = {};
+        cookies.forEach(cookie => {
+            const domain = cookie.domain;
+            if (!grouped[domain]) {
+                grouped[domain] = [];
+            }
+            grouped[domain].push(cookie);
+        });
+        
+        // Render grouped cookies
+        list.innerHTML = '';
+        Object.entries(grouped).forEach(([domain, cookieList]) => {
+            const div = document.createElement('div');
+            div.className = 'cookie-item';
+            div.innerHTML = `
+                <div class="cookie-domain">
+                    <div class="cookie-domain-name">${domain}</div>
+                    <div class="cookie-count">${cookieList.length} cookie(s)</div>
+                </div>
+                <div class="cookie-actions">
+                    <button class="cookie-action-btn" onclick="clearDomainCookies('${domain}')">
+                        <i class="fa-solid fa-trash"></i> Clear
+                    </button>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    } catch (error) {
+        list.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+    }
+}
+
+// Search cookies by domain
+async function searchCookies() {
+    const input = document.getElementById('cookieDomainInput');
+    const domain = input.value.trim();
+    await loadCookies(domain);
+}
+
+// Clear all cookies
+async function clearAllCookies() {
+    if (!confirm('Are you sure you want to clear ALL cookies? This will sign you out of all websites.')) {
+        return;
+    }
+    
+    try {
+        await window.electronAPI.clearAllCookies();
+        await loadCookies();
+        alert('All cookies cleared successfully!');
+    } catch (error) {
+        alert('Failed to clear cookies: ' + error.message);
+    }
+}
+
+// Clear cookies for a specific domain
+async function clearDomainCookies(domain) {
+    if (!confirm(`Clear all cookies for ${domain}?`)) {
+        return;
+    }
+    
+    try {
+        await window.electronAPI.clearDomainCookies(domain);
+        await loadCookies();
+    } catch (error) {
+        alert('Failed to clear cookies: ' + error.message);
+    }
+}
+
+// Clear all browser data
+async function clearBrowserData() {
+    if (!confirm('Are you sure you want to clear ALL browser data (cookies, cache, localStorage, etc.)? This will sign you out of all websites.')) {
+        return;
+    }
+    
+    try {
+        await window.electronAPI.clearBrowserData();
+        alert('All browser data cleared successfully!');
+        // Reload all tabs
+        document.querySelectorAll('webview').forEach(wv => {
+            wv.reload();
+        });
+    } catch (error) {
+        alert('Failed to clear browser data: ' + error.message);
+    }
+}
+
+// Load saved permissions
+async function loadPermissions() {
+    const list = document.getElementById('permissionsList');
+    
+    try {
+        const permissions = await window.electronAPI.getPermissionPreferences();
+        
+        const permissionsArray = Object.entries(permissions);
+        
+        if (permissionsArray.length === 0) {
+            list.innerHTML = '<div class="empty-state">No saved permissions</div>';
+            return;
+        }
+        
+        list.innerHTML = '';
+        permissionsArray.forEach(([key, allowed]) => {
+            const [origin, permission] = key.split(':');
+            const div = document.createElement('div');
+            div.className = 'permission-item';
+            div.innerHTML = `
+                <div class="permission-header">
+                    <span class="permission-origin">${origin}</span>
+                </div>
+                <div class="permission-list-details">
+                    <div class="permission-detail">
+                        <span class="permission-type">${formatPermissionType(permission)}</span>
+                        <button class="permission-toggle ${allowed ? 'granted' : 'denied'}" 
+                                onclick="removePermission('${key}')">
+                            <i class="fa-solid ${allowed ? 'fa-check' : 'fa-xmark'}"></i> 
+                            ${allowed ? 'Allowed' : 'Denied'}
+                        </button>
+                    </div>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    } catch (error) {
+        list.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+    }
+}
+
+// Remove a permission preference
+async function removePermission(key) {
+    if (!confirm('Remove this permission preference?')) {
+        return;
+    }
+    
+    try {
+        await window.electronAPI.removePermissionPreference(key);
+        await loadPermissions();
+    } catch (error) {
+        alert('Failed to remove permission: ' + error.message);
     }
 }

@@ -741,3 +741,326 @@ webview:not(.active) {
     color: white;
 }
 .btn-confirm:hover { filter: brightness(1.2); }
+
+
+/* ============================================
+   PERMISSIONS & COOKIES MODAL
+   ============================================ */
+
+/* Fix for permissions modal */
+.permissions-modal {
+    width: 800px;
+    height: 600px;
+    padding: 0;
+    background: var(--bg-panel);
+}
+
+.permissions-modal .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-lighter);
+}
+
+.permissions-modal .modal-header h2 {
+    font-size: 1.3rem;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+
+.permissions-modal .modal-header i {
+    color: var(--accent);
+}
+
+.permissions-modal .modal-body {
+    padding: 0;
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    height: calc(100% - 70px);
+}
+
+.permissions-tabs {
+    display: flex;
+    border-bottom: 1px solid #333;
+    padding: 0 20px;
+    background: var(--bg-lighter);
+}
+
+
+.tab-btn {
+    padding: 15px 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tab-btn:hover {
+    color: var(--text-main);
+    background: var(--bg-hover);
+}
+
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tab-btn i {
+    color: inherit;
+}
+
+.tab-content {
+    display: none;
+    padding: 20px;
+    height: calc(100% - 70px);
+    overflow-y: auto;
+    background: var(--bg-panel);
+}
+
+.tab-content.active {
+    display: block;
+}
+
+
+/* Cookies Controls */
+.cookies-controls {
+    margin-bottom: 20px;
+}
+
+.cookies-input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.cookies-input-group input {
+    flex: 1;
+    padding: 10px;
+    background: #2c2e33;
+    border: 1px solid #444;
+    border-radius: 6px;
+    color: white;
+    outline: none;
+}
+
+.cookies-input-group input:focus {
+    border-color: var(--accent);
+}
+
+.cookies-input-group button {
+    padding: 10px 20px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.cookies-input-group button:hover {
+    filter: brightness(1.2);
+}
+
+.cookies-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-danger {
+    flex: 1;
+    padding: 10px;
+    background: #e53935;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: 0.2s;
+}
+
+.btn-danger:hover {
+    background: #d32f2f;
+}
+
+/* Cookies List */
+.cookies-list {
+    border: 1px solid #333;
+    border-radius: 6px;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.cookie-item {
+    padding: 15px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: background 0.2s;
+}
+
+.cookie-item:hover {
+    background: var(--bg-hover);
+}
+
+.cookie-domain {
+    flex: 1;
+}
+
+.cookie-domain-name {
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+
+.cookie-count {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.cookie-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.cookie-action-btn {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid #444;
+    color: var(--text-dim);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: 0.2s;
+}
+
+.cookie-action-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-main);
+}
+
+.cookie-action-btn.delete:hover {
+    background: #e53935;
+    color: white;
+    border-color: #e53935;
+}
+
+/* Permissions List */
+.permission-item {
+    padding: 15px;
+    border-bottom: 1px solid #333;
+    background: var(--bg-panel);
+}
+
+.permission-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.permission-origin {
+    font-weight: 600;
+    color: var(--text-main); /* Make sure text color is set */
+    font-size: 1rem;
+}
+
+.permission-list-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.permission-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: var(--bg-lighter);
+    border-radius: 6px;
+}
+
+.permission-type {
+    color: var(--text-dim); /* Dimmed text for permission type */
+    font-size: 0.9rem;
+}
+
+.permission-toggle {
+    padding: 8px 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: 0.2s;
+}
+
+.permission-toggle.denied {
+    background: #444;
+    color: #aaa;
+}
+
+.permission-toggle.denied:hover {
+    background: #555;
+}
+
+.permission-toggle.granted:hover {
+    filter: brightness(1.2);
+}
+
+.empty-state {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-dim);
+}
+
+/* Fix modal overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 2000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: var(--bg-panel);
+    border-radius: 8px;
+    border: 1px solid #333;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    color: var(--text-main); /* Ensure text color is set */
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-main);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.close-btn:hover {
+    color: var(--accent);
+}

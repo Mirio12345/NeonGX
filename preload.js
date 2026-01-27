@@ -45,5 +45,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeAllListeners('download-started');
         ipcRenderer.removeAllListeners('download-updated');
         ipcRenderer.removeAllListeners('download-completed');
-    }
+    },
+    getPermissionPreferences: () => ipcRenderer.invoke('get-permission-preference'), // NOT 'preferences'
+    setPermissionPreference: (origin, permission, allowed) => 
+    ipcRenderer.invoke('set-permission-preference', { origin, permission, allowed }),
+    removePermissionPreference: (key) => ipcRenderer.invoke('remove-permission-preference', key),
+    
+    // Cookies APIs
+    getCookies: (filter) => ipcRenderer.invoke('get-cookies', filter),
+    clearAllCookies: () => ipcRenderer.invoke('clear-all-cookies'),
+    clearDomainCookies: (domain) => ipcRenderer.invoke('clear-domain-cookies', domain),
+    clearBrowserData: () => ipcRenderer.invoke('clear-browser-data'),
 });

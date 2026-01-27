@@ -2,11 +2,38 @@
 const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
 const { ElectronBlocker } = require('@ghostery/adblocker-electron');
 const path = require('path');
+const fs = require('fs');
 
 let mainWindow;
 let pendingPermissionRequest = null;
 let activeDownloads = new Map();
 const downloadItems = new Map();
+
+// Path to store permission preferences
+const permissionsFilePath = path.join(app.getPath('userData'), 'permission-preferences.json');
+// Helper functions to load/save permissions
+function loadPermissionPreferences() {
+    try {
+        if (fs.existsSync(permissionsFilePath)) {
+            const data = fs.readFileSync(permissionsFilePath, 'utf-8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading permission preferences:', error);
+    }
+    return {};
+}
+
+function savePermissionPreferences(preferences) {
+    try {
+        fs.writeFileSync(permissionsFilePath, JSON.stringify(preferences, null, 2), 'utf-8');
+    } catch (error) {
+        console.error('Error saving permission preferences:', error);
+    }
+}
+
+// Load permissions on startup
+let permissionPreferences = loadPermissionPreferences();
 
 function createWindow() {
   // FIX: Check if window already exists!
@@ -142,30 +169,41 @@ webviewSession.webRequest.onBeforeRequest((details, callback) => {
   }
 }, { urls: ['<all_urls>'] });
 
-  // 3. PERMISSION MANAGEMENT
-  webviewSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+// 3. PERMISSION MANAGEMENT
+webviewSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     console.log('Permission request:', permission, details);
 
     // Store the callback to be used after user responds
     const requestId = Date.now().toString();
     pendingPermissionRequest = {
-      id: requestId,
-      permission: permission,
-      details: details,
-      callback: callback,
-      url: webContents.getURL()
-    };
-
-    // Send permission request to renderer
-    if (mainWindow) {
-      mainWindow.webContents.send('permission-request', {
         id: requestId,
         permission: permission,
         details: details,
+        callback: callback,
         url: webContents.getURL()
-      });
+    };
+
+    // Check if we have a saved preference
+    const origin = new URL(webContents.getURL()).origin;
+    const key = `${origin}:${permission}`;
+    
+    if (permissionPreferences && permissionPreferences[key] !== undefined) {
+        // Use saved preference automatically
+        console.log(`Using saved preference for ${key}: ${permissionPreferences[key]}`);
+        pendingPermissionRequest = null;
+        callback(permissionPreferences[key]);
+    } else {
+        // Send permission request to renderer
+        if (mainWindow) {
+            mainWindow.webContents.send('permission-request', {
+                id: requestId,
+                permission: permission,
+                details: details,
+                url: webContents.getURL()
+            });
+        }
     }
-  });
+});
 
   // 4. DOWNLOAD MANAGEMENT (FIXED VERSION)
 webviewSession.on('will-download', (event, item, webContents) => {
@@ -294,28 +332,30 @@ webviewSession.on('will-download', (event, item, webContents) => {
 
 // Handle permission response from renderer
 ipcMain.on('permission-response', (event, { requestId, allowed }) => {
-  if (pendingPermissionRequest && pendingPermissionRequest.id === requestId) {
-    console.log(`Permission ${requestId}: ${allowed ? 'granted' : 'denied'}`);
+    if (pendingPermissionRequest && pendingPermissionRequest.id === requestId) {
+        console.log(`Permission ${requestId}: ${allowed ? 'granted' : 'denied'}`);
 
-    // Call the original callback with the user's decision
-    pendingPermissionRequest.callback(allowed);
+        // Call the original callback with the user's decision
+        pendingPermissionRequest.callback(allowed);
 
-    // Clear pending request
-    pendingPermissionRequest = null;
-  }
+        // Save preference to file
+        const origin = new URL(pendingPermissionRequest.url).origin;
+        const key = `${origin}:${pendingPermissionRequest.permission}`;
+        
+        if (!permissionPreferences) {
+            permissionPreferences = loadPermissionPreferences();
+        }
+        
+        permissionPreferences[key] = allowed;
+        savePermissionPreferences(permissionPreferences);
+        
+        console.log(`Saved permission preference: ${key} = ${allowed}`);
+
+        // Clear pending request
+        pendingPermissionRequest = null;
+    }
 });
 
-// Handle permission preferences
-ipcMain.handle('get-permission-preferences', async () => {
-  const preferences = {};
-  return preferences;
-});
-
-ipcMain.handle('set-permission-preference', async (event, { origin, permission, allowed }) => {
-  // You could save these to a file or database for persistence
-  console.log(`Setting permission preference: ${origin} - ${permission} = ${allowed}`);
-  return true;
-});
 
 // --- DOWNLOAD MANAGEMENT IPC HANDLERS ---
 
@@ -422,17 +462,6 @@ ipcMain.handle('dialog:openDirectory', async () => {
     return result.filePaths[0];
 });
 
-ipcMain.handle('install-extension', async (event, extensionPath) => {
-    try {
-        // FIX: Target the 'persist:main' session specifically!
-        const id = await session.fromPartition('persist:main').loadExtension(extensionPath);
-        console.log(`Extension loaded in webview session: ${id}`);
-        return { success: true, id: id };
-    } catch (e) {
-        console.error(e);
-        return { success: false, error: e.message };
-    }
-});
 
 ipcMain.handle('get-ram-usage', async () => {
   const usage = process.getProcessMemoryInfo();
@@ -449,3 +478,169 @@ ipcMain.on('window-maximize', () => {
   else mainWindow.maximize();
 });
 ipcMain.on('window-close', () => mainWindow.close());
+
+
+// ============================================
+// COOKIES & PERMISSIONS MANAGEMENT
+// ============================================
+
+// Get all cookies
+ipcMain.handle('get-cookies', async (event, filter = '') => {
+    try {
+        const cookies = await session.fromPartition('persist:main').cookies.get({});
+        
+        if (filter) {
+            const lowerFilter = filter.toLowerCase();
+            return cookies.filter(cookie => 
+                cookie.domain.toLowerCase().includes(lowerFilter) ||
+                cookie.name.toLowerCase().includes(lowerFilter)
+            );
+        }
+        
+        return cookies;
+    } catch (error) {
+        console.error('Failed to get cookies:', error);
+        return [];
+    }
+});
+
+// Clear all cookies
+ipcMain.handle('clear-all-cookies', async () => {
+    try {
+        await session.fromPartition('persist:main').cookies.flushStore();
+        await session.fromPartition('persist:main').clearStorageData({
+            storages: ['cookies', 'localstorage', 'cachestorage'],
+            quotas: ['temporary', 'persistent', 'syncable']
+        });
+        return { success: true };
+    } catch (error) {
+        console.error('Failed to clear all cookies:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Clear cookies for a specific domain
+ipcMain.handle('clear-domain-cookies', async (event, domain) => {
+    try {
+        const sessionPartition = session.fromPartition('persist:main');
+        const cookies = await sessionPartition.cookies.get({});
+        
+        let removedCount = 0;
+        
+        // Normalize the search domain for comparison
+        const searchDomain = domain.toLowerCase().replace(/^\./, '').replace(/^www\./, '');
+        
+        for (const cookie of cookies) {
+            // Normalize cookie domain for comparison
+            let cookieDomain = cookie.domain.toLowerCase();
+            
+            // Remove leading dot from cookie domain
+            if (cookieDomain.startsWith('.')) {
+                cookieDomain = cookieDomain.substring(1);
+            }
+            
+            // Remove www from cookie domain for comparison
+            if (cookieDomain.startsWith('www.')) {
+                cookieDomain = cookieDomain.substring(4);
+            }
+            
+            // Match domains (more flexible matching)
+            if (cookieDomain === searchDomain || 
+                cookieDomain.endsWith('.' + searchDomain) ||
+                searchDomain === cookieDomain ||
+                searchDomain.endsWith('.' + cookieDomain)) {
+                
+                // Build proper URL for removal
+                const protocol = cookie.secure ? 'https' : 'http';
+                let urlDomain = cookie.domain;
+                
+                // Handle domain cookies (starting with dot)
+                if (urlDomain.startsWith('.')) {
+                    urlDomain = 'www' + urlDomain;
+                }
+                
+                const url = `${protocol}://${urlDomain}`;
+                
+                try {
+                    await sessionPartition.cookies.remove(url, cookie.name);
+                    removedCount++;
+                    console.log(`Removed cookie: ${cookie.name} from ${cookie.domain}`);
+                } catch (err) {
+                    console.log('Failed to remove cookie:', cookie.name, err.message);
+                }
+            }
+        }
+        
+        console.log(`Total cookies removed for ${domain}: ${removedCount}`);
+        return { success: true, removedCount };
+    } catch (error) {
+        console.error('Failed to clear domain cookies:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Clear all browser data
+ipcMain.handle('clear-browser-data', async () => {
+    try {
+        await session.fromPartition('persist:main').clearStorageData({
+            storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'cachestorage', 'serviceworkers'],
+            quotas: ['temporary', 'persistent', 'syncable']
+        });
+        
+        // Also clear HTTP cache
+        await session.fromPartition('persist:main').clearCache();
+        
+        return { success: true };
+    } catch (error) {
+        console.error('Failed to clear browser data:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Handle setting a permission preference
+ipcMain.handle('set-permission-preference', async (event, { origin, permission, allowed }) => {
+    try {
+        if (!permissionPreferences) {
+            permissionPreferences = loadPermissionPreferences();
+        }
+        
+        const key = `${origin}:${permission}`;
+        permissionPreferences[key] = allowed;
+        
+        savePermissionPreferences(permissionPreferences);
+        console.log(`Setting permission preference: ${origin} - ${permission} = ${allowed}`);
+        return { success: true };
+    } catch (error) {
+        console.error('Error setting permission preference:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Handle getting permission preference
+ipcMain.handle('get-permission-preference', async () => {
+    if (!permissionPreferences) {
+        permissionPreferences = loadPermissionPreferences();
+    }
+    return permissionPreferences || {};
+});
+
+// Handle removing a permission preference
+ipcMain.handle('remove-permission-preference', async (event, key) => {
+    try {
+        if (!permissionPreferences) {
+            permissionPreferences = loadPermissionPreferences();
+        }
+        
+        if (permissionPreferences[key] !== undefined) {
+            delete permissionPreferences[key];
+            savePermissionPreferences(permissionPreferences);
+            console.log('Removing permission preference:', key);
+            return { success: true };
+        }
+        
+        return { success: false, error: 'Permission preference not found' };
+    } catch (error) {
+        console.error('Error removing permission preference:', error);
+        return { success: false, error: error.message };
+    }
+});
