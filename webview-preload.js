@@ -47,8 +47,24 @@
             originalQuery(parameters)
     );
 
-    // --- 5. NEW: INJECT COSMETIC CSS (YouTube Cleanup) ---
-    // This function injects styles to hide ads visually
+    // 5. NEW: Hide context menu on click inside webview
+    // Listen for clicks anywhere in the webview and notify the main renderer
+    document.addEventListener('click', () => {
+        // Send message to the embedder (main renderer)
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.sendToHost('webview-click');
+    });
+
+    // Also listen for right-click to handle the case where user right-clicks elsewhere
+    document.addEventListener('contextmenu', (e) => {
+        // Only send if NOT opening context menu (right-click with no modifiers)
+        if (!e.ctrlKey && !e.shiftKey) {
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.sendToHost('webview-contextmenu');
+        }
+    });
+
+    // --- 6. INJECT COSMETIC CSS (YouTube Cleanup) ---
     function injectCosmetics() {
         const style = document.createElement('style');
         style.textContent = `

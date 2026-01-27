@@ -58,6 +58,15 @@ app.whenReady().then(() => {
 
   const webviewSession = session.fromPartition('persist:main');
 
+  // NEW: Configure cookies for better Google login support
+webviewSession.cookies.set({
+  url: 'https://accounts.google.com',
+  name: 'test_cookie',
+  value: '1',
+  domain: '.google.com'
+}).catch(() => {});
+
+  // 2. MODIFY REQUEST HEADERS TO MIMIC FIREFOX
   webviewSession.webRequest.onBeforeSendHeaders((details, callback) => {
 
     // 1. Set Firefox User Agent

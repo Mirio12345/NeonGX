@@ -884,13 +884,23 @@ function createWebviewElement(tab) {
         renderTabs();
     });
 
-    // Context Menu Logic - FIXED (attached after webview is in DOM)
+   // Context Menu Logic
     webview.addEventListener('context-menu', (e) => {
         console.log('Webview context-menu event fired:', e);
         try {
             showContextMenu(e, tab.id);
         } catch (error) {
             console.error('Error showing context menu:', error);
+        }
+    });
+
+    // === NEW: Listen for messages from webview preload script ===
+    webview.addEventListener('ipc-message', (event) => {
+        console.log('Received message from webview:', event.channel);
+        
+        // Hide context menu when user clicks or right-clicks inside webview
+        if (event.channel === 'webview-click' || event.channel === 'webview-contextmenu') {
+            hideContextMenu();
         }
     });
 }
