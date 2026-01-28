@@ -17,8 +17,10 @@ function loadPermissionPreferences() {
         if (fs.existsSync(permissionsFilePath)) {
             const data = fs.readFileSync(permissionsFilePath, 'utf-8');
             const prefs = JSON.parse(data);
-            console.log('Loaded permissions from file:', prefs); // Debug logging
+            console.log('Loaded preferences from file:', prefs);
             return prefs;
+        } else {
+            console.log('No preferences file found, returning empty object');
         }
     } catch (error) {
         console.error('Error loading permission preferences:', error);
@@ -29,14 +31,11 @@ function loadPermissionPreferences() {
 function savePermissionPreferences(preferences) {
     try {
         fs.writeFileSync(permissionsFilePath, JSON.stringify(preferences, null, 2), 'utf-8');
-        console.log('Saved permissions to:', permissionsFilePath); // Debug logging
+        console.log('Saved preferences to file:', preferences);
     } catch (error) {
         console.error('Error saving permission preferences:', error);
     }
 }
-
-// Load permissions on startup
-let permissionPreferences = loadPermissionPreferences();
 
 function createWindow() {
   // FIX: Check if window already exists!
@@ -172,12 +171,14 @@ webviewSession.webRequest.onBeforeRequest((details, callback) => {
   }
 }, { urls: ['<all_urls>'] });
 
-// 3. PERMISSION MANAGEMENT
-// 3. PERMISSION MANAGEMENT (UPDATED - Always Show Popup)
+// 3. PERMISSION MANAGEMENT (UPDATED VERSION)
 webviewSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     console.log('Permission request:', permission, details);
 
-    // Store the callback to be used after user responds
+    // RELOAD PREFERENCES FROM FILE (don't use cached version!)
+    const currentPreferences = loadPermissionPreferences();
+    
+    // Store the callback
     const requestId = Date.now().toString();
     pendingPermissionRequest = {
         id: requestId,
@@ -187,15 +188,29 @@ webviewSession.setPermissionRequestHandler((webContents, permission, callback, d
         url: webContents.getURL()
     };
 
-    // ALWAYS send permission request to renderer (show popup every time)
-    // Do NOT automatically use saved preferences!
-    if (mainWindow) {
-        mainWindow.webContents.send('permission-request', {
-            id: requestId,
-            permission: permission,
-            details: details,
-            url: webContents.getURL()
-        });
+    // Check if we have a saved preference (reload from file to be sure)
+    const origin = new URL(webContents.getURL()).origin;
+    const key = `${origin}:${permission}`;
+    
+    console.log('Checking for saved preference:', key);
+    
+    if (currentPreferences[key] !== undefined) {
+        // Use saved preference automatically
+        const savedValue = currentPreferences[key];
+        console.log(`Using saved preference for ${key}: ${savedValue}`);
+        pendingPermissionRequest = null;
+        callback(savedValue);
+    } else {
+        // No saved preference, show permission request modal to user
+        console.log(`No saved preference for ${key}, asking user...`);
+        if (mainWindow) {
+            mainWindow.webContents.send('permission-request', {
+                id: requestId,
+                permission: permission,
+                details: details,
+                url: webContents.getURL()
+            });
+        }
     }
 });
 
@@ -327,28 +342,25 @@ webviewSession.on('will-download', (event, item, webContents) => {
 
 // Handle permission response from renderer
 ipcMain.on('permission-response', (event, { requestId, allowed }) => {
+    console.log('Permission response received:', requestId, allowed);
+    
     if (pendingPermissionRequest && pendingPermissionRequest.id === requestId) {
         console.log(`Permission ${requestId}: ${allowed ? 'granted' : 'denied'}`);
 
-        // Call the original callback with the user's decision
+        // Call the callback
         pendingPermissionRequest.callback(allowed);
 
-        // Save preference to file (for reference, not auto-application)
-        try {
-            const origin = new URL(pendingPermissionRequest.url).origin;
-            const key = `${origin}:${pendingPermissionRequest.permission}`;
-            
-            if (!permissionPreferences) {
-                permissionPreferences = {};
-            }
-            
-            permissionPreferences[key] = allowed;
-            savePermissionPreferences(permissionPreferences);
-            
-            console.log(`✓ Saved permission preference: ${key} = ${allowed}`);
-        } catch (error) {
-            console.error('Failed to save permission preference:', error);
-        }
+        // RELOAD FROM FILE to ensure we're working with latest data
+        const currentPreferences = loadPermissionPreferences();
+        
+        // Save preference to file
+        const origin = new URL(pendingPermissionRequest.url).origin;
+        const key = `${origin}:${pendingPermissionRequest.permission}`;
+        
+        currentPreferences[key] = allowed;
+        savePermissionPreferences(currentPreferences);
+        
+        console.log(`Saved permission preference: ${key} = ${allowed}`);
 
         // Clear pending request
         pendingPermissionRequest = null;
@@ -614,25 +626,34 @@ ipcMain.handle('set-permission-preference', async (event, { origin, permission, 
     }
 });
 
-// Handle getting permission preference
+// Handle getting permission preferences
 ipcMain.handle('get-permission-preference', async () => {
-    if (!permissionPreferences) {
-        permissionPreferences = loadPermissionPreferences();
-    }
-    return permissionPreferences || {};
+    console.log('Getting permission preferences from file...');
+    
+    // ALWAYS reload from file (don't use undefined global variable!)
+    const preferences = loadPermissionPreferences();
+    console.log('Loaded preferences:', preferences);
+    
+    return preferences || {};
 });
 
 // Handle removing a permission preference
 ipcMain.handle('remove-permission-preference', async (event, key) => {
+    console.log('Removing permission preference:', key);
+    
     try {
-        if (!permissionPreferences) {
-            permissionPreferences = loadPermissionPreferences();
-        }
+        // RELOAD FROM FILE to get current state
+        const currentPreferences = loadPermissionPreferences();
         
-        if (permissionPreferences[key] !== undefined) {
-            delete permissionPreferences[key];
-            savePermissionPreferences(permissionPreferences);
-            console.log('Removing permission preference:', key);
+        if (currentPreferences[key] !== undefined) {
+            delete currentPreferences[key];
+            
+            // Save back to file
+            savePermissionPreferences(currentPreferences);
+            
+            console.log('Deleted preference:', key);
+            console.log('Updated preferences after deletion:', currentPreferences);
+            
             return { success: true };
         }
         

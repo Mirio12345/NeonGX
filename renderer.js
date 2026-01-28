@@ -137,19 +137,17 @@ function showPermissionRequest(data) {
     permissionType.textContent = formatPermissionType(data.permission);
     requestingUrl.textContent = data.url;
 
+    console.log('[Renderer] Showing permission modal for:', data.url, data.permission);
     modal.style.display = 'flex';
 }
 
 // Handle permission response
 function handlePermissionResponse(allowed) {
     if (pendingPermissionRequest) {
+        console.log('[Renderer] Sending permission response:', pendingPermissionRequest.id, allowed);
+        
         // Send response to main process
         window.electronAPI.respondToPermission(pendingPermissionRequest.id, allowed);
-
-        // Save preference for this origin
-        const origin = new URL(pendingPermissionRequest.url).origin;
-        permissionPreferences[`${origin}:${pendingPermissionRequest.permission}`] = allowed;
-        savePermissions();
 
         // Hide modal
         document.getElementById('permissionModal').style.display = 'none';
@@ -590,20 +588,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Setup permission request listener
     window.electronAPI.onPermissionRequest((data) => {
-        console.log('Permission request received:', data);
-
-        // Check if we have a saved preference
-        const origin = new URL(data.url).origin;
-        const preferenceKey = `${origin}:${data.permission}`;
-
-        if (permissionPreferences[preferenceKey] !== undefined) {
-            // Use saved preference automatically
-            window.electronAPI.respondToPermission(data.id, permissionPreferences[preferenceKey]);
-        } else {
-            // Show permission request modal
-            showPermissionRequest(data);
-        }
-    });
+    console.log('[Renderer] Permission request received:', data);
+    
+    // Just show the modal - don't do any checking here!
+    // The main process already checked for saved preferences
+    showPermissionRequest(data);
+});
 
     // Setup download event listeners
     window.electronAPI.onDownloadStarted((download) => {
