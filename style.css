@@ -24,11 +24,12 @@ body {
     overflow: hidden;
 }
 
-/* --- 2. SIDEBAR (Fixed Left, Now at Top Edge) --- */
+/* Make sure sidebar has proper positioning */
 .sidebar {
     position: fixed;
-    top: 0; /* Now starts at top instead of 32px */
-    left: 0; bottom: 0;
+    top: 0;
+    left: 0;
+    bottom: 0;
     width: var(--sidebar-width);
     background-color: var(--bg-panel);
     display: flex;
@@ -38,6 +39,9 @@ body {
     overflow-y: auto;
     z-index: 900;
     box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+    /* ADD THIS */
+    min-width: 150px;
+    max-width: 500px;
 }
 
 .section-title {
@@ -654,20 +658,37 @@ webview:not(.active) {
     padding: 0 16px;
 }
 
-/* --- RESIZE HANDLE --- */
+/* ============================================
+   RESIZE HANDLE (AT TOP)
+   ============================================ */
+
 .resize-handle {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 5px;
-    cursor: ew-resize; /* Changes mouse icon to arrows */
+    top: 50%;  /* Center vertically */
+    right: 0;   /* At the right edge of sidebar */
+    width: 8px;
+    height: 60px;  /* Reasonable size to grab */
     background: transparent;
-    z-index: 999;
+    cursor: ew-resize;
+    z-index: 1000;  /* Above everything in sidebar */
+    border-radius: 4px;
     transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
+
 .resize-handle:hover {
-    background: var(--accent); /* Show red when hovering */
+    background: var(--accent);
+}
+
+.resize-handle i {
+    color: var(--text-dim);
+    font-size: 14px;
+}
+
+.resize-handle:hover i {
+    color: white;
 }
 
 /* --- WORKSPACE DELETE BUTTON --- */

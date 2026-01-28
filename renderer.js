@@ -665,53 +665,83 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- TAB SCROLL WITH MOUSE WHEEL ---
-    const tabBar = document.getElementById('tabBar');
+   // --- TAB SCROLL WITH MOUSE WHEEL (UPDATED) ---
+const tabBar = document.getElementById('tabBar');
 
-    tabBar.addEventListener('wheel', (e) => {
-        // Check if there is actually overflow to scroll
-        if (tabBar.scrollWidth > tabBar.clientWidth) {
-            // Prevent default vertical scrolling
-            e.preventDefault();
+// Use wheel event with better touchpad support
+tabBar.addEventListener('wheel', (e) => {
+    // Check if there is actually overflow to scroll
+    if (tabBar.scrollWidth > tabBar.clientWidth) {
+        // Prevent default page scrolling
+        e.preventDefault();
+        
+        // Get scroll amount from any delta (deltaY or deltaX)
+        // Touchpads often use deltaX for horizontal scroll
+        let scrollAmount = e.deltaY || e.deltaX || 0;
+        
+        // Adjust scroll
+        tabBar.scrollLeft += scrollAmount;
+        
+        console.log('Scrolling tabbar:', scrollAmount, 'New position:', tabBar.scrollLeft);
+    }
+}, { passive: false });  // Make sure we can prevent default
 
-            // Convert vertical scroll (deltaY) to horizontal scroll (scrollLeft)
-            tabBar.scrollLeft += e.deltaY;
+    // --- RESIZABLE SIDEBAR LOGIC (UPDATED) ---
+const resizer = document.getElementById('resize-handle');
+const sidebar = document.querySelector('aside');
+const root = document.documentElement;
+let isResizing = false;
+
+resizer.addEventListener('mousedown', (e) => {
+    // Use capture phase to ensure we catch it
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isResizing = true;
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    
+    // Add temporary overlay to prevent webview from capturing events
+    const overlay = document.createElement('div');
+    overlay.id = 'resize-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.1);
+        z-index: 9999;
+    `;
+    document.body.appendChild(overlay);
+});
+
+// Use document for mousemove and mouseup to catch events even over webview
+document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    // Calculate new width
+    const sidebarLeft = sidebar.getBoundingClientRect().left;
+    let newWidth = e.clientX - sidebarLeft;
+
+    // Enforce min/max widths
+    if (newWidth < 150) newWidth = 150;
+    if (newWidth > 500) newWidth = 500;
+
+    // Update CSS Variable
+    root.style.setProperty('--sidebar-width', newWidth + 'px');
+});
+
+document.addEventListener('mouseup', () => {
+    if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = 'default';
+        document.body.style.userSelect = '';
+        
+        // Remove overlay
+        const overlay = document.getElementById('resize-overlay');
+        if (overlay) {
+            overlay.remove();
         }
-    });
-
-    // --- RESIZABLE SIDEBAR LOGIC ---
-    const resizer = document.getElementById('resize-handle');
-    const sidebar = document.querySelector('aside');
-    const root = document.documentElement; // Access CSS Variables
-    let isResizing = false;
-
-    resizer.addEventListener('mousedown', (e) => {
-        isResizing = true;
-        document.body.style.cursor = 'ew-resize';
-        // Prevent text selection while dragging
-        document.body.style.userSelect = 'none';
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isResizing) return;
-
-        // Calculate new width based on mouse X position
-        // Minimum width 150px, Maximum width 500px
-        let newWidth = e.clientX;
-        if (newWidth < 150) newWidth = 150;
-        if (newWidth > 500) newWidth = 500;
-
-        // Update CSS Variable for --sidebar-width
-        root.style.setProperty('--sidebar-width', newWidth + 'px');
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isResizing) {
-            isResizing = false;
-            document.body.style.cursor = 'default';
-            document.body.style.userSelect = 'none'; // Reset user select
-        }
-    });
+    }
+});
 
     // Allow pressing "Enter" to create workspace
     document.getElementById('wsNameInput').addEventListener('keydown', (e) => {
