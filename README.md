@@ -30,5 +30,3 @@ When trying to login with google it can happen that it says the browser isnt sup
 
 Discord wants you to login again everytime u switch the workplace
 
-
-Permisions dont get cleared corectly
