@@ -1288,7 +1288,8 @@ function openPermissionsModal() {
     const modal = document.getElementById('permissionsModal');
     modal.style.display = 'flex';
     
-    // Load cookies by default
+    // Force reload cookies and permissions every time modal opens
+    console.log('Opening permissions modal, reloading data...');
     loadCookies();
     loadPermissions();
 }
@@ -1420,12 +1421,16 @@ async function loadPermissions() {
     const list = document.getElementById('permissionsList');
     
     try {
+        console.log('Loading permissions...');
         const permissions = await window.electronAPI.getPermissionPreferences();
+        console.log('Received permissions:', permissions);
         
-        const permissionsArray = Object.entries(permissions);
+        // Convert to array and sort by key
+        const permissionsArray = Object.entries(permissions).sort((a, b) => a[0].localeCompare(b[0]));
         
         if (permissionsArray.length === 0) {
-            list.innerHTML = '<div class="empty-state">No saved permissions</div>';
+            list.innerHTML = '<div class="empty-state">No saved permissions yet. Respond to permission requests to see them here.</div>';
+            console.log('No permissions to display');
             return;
         }
         
@@ -1442,7 +1447,7 @@ async function loadPermissions() {
                     <div class="permission-detail">
                         <span class="permission-type">${formatPermissionType(permission)}</span>
                         <button class="permission-toggle ${allowed ? 'granted' : 'denied'}" 
-                                onclick="removePermission('${key}')">
+                                onclick="removePermission('${key.replace(/'/g, "\\'")}')">
                             <i class="fa-solid ${allowed ? 'fa-check' : 'fa-xmark'}"></i> 
                             ${allowed ? 'Allowed' : 'Denied'}
                         </button>
@@ -1451,8 +1456,11 @@ async function loadPermissions() {
             `;
             list.appendChild(div);
         });
+        
+        console.log(`Displayed ${permissionsArray.length} permissions`);
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`;
+        console.error('Error loading permissions:', error);
+        list.innerHTML = `<div class="empty-state">Error loading permissions: ${error.message}</div>`;
     }
 }
 

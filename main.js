@@ -10,13 +10,15 @@ let activeDownloads = new Map();
 const downloadItems = new Map();
 
 // Path to store permission preferences
-const permissionsFilePath = path.join(app.getPath('userData'), 'permission-preferences.json');
+const permissionsFilePath = path.join(app.getPath('userData'), 'permission-preferences.json'); 
 // Helper functions to load/save permissions
 function loadPermissionPreferences() {
     try {
         if (fs.existsSync(permissionsFilePath)) {
             const data = fs.readFileSync(permissionsFilePath, 'utf-8');
-            return JSON.parse(data);
+            const prefs = JSON.parse(data);
+            console.log('Loaded permissions from file:', prefs); // Debug logging
+            return prefs;
         }
     } catch (error) {
         console.error('Error loading permission preferences:', error);
@@ -27,6 +29,7 @@ function loadPermissionPreferences() {
 function savePermissionPreferences(preferences) {
     try {
         fs.writeFileSync(permissionsFilePath, JSON.stringify(preferences, null, 2), 'utf-8');
+        console.log('Saved permissions to:', permissionsFilePath); // Debug logging
     } catch (error) {
         console.error('Error saving permission preferences:', error);
     }
@@ -170,6 +173,7 @@ webviewSession.webRequest.onBeforeRequest((details, callback) => {
 }, { urls: ['<all_urls>'] });
 
 // 3. PERMISSION MANAGEMENT
+// 3. PERMISSION MANAGEMENT (UPDATED - Always Show Popup)
 webviewSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     console.log('Permission request:', permission, details);
 
@@ -183,25 +187,15 @@ webviewSession.setPermissionRequestHandler((webContents, permission, callback, d
         url: webContents.getURL()
     };
 
-    // Check if we have a saved preference
-    const origin = new URL(webContents.getURL()).origin;
-    const key = `${origin}:${permission}`;
-    
-    if (permissionPreferences && permissionPreferences[key] !== undefined) {
-        // Use saved preference automatically
-        console.log(`Using saved preference for ${key}: ${permissionPreferences[key]}`);
-        pendingPermissionRequest = null;
-        callback(permissionPreferences[key]);
-    } else {
-        // Send permission request to renderer
-        if (mainWindow) {
-            mainWindow.webContents.send('permission-request', {
-                id: requestId,
-                permission: permission,
-                details: details,
-                url: webContents.getURL()
-            });
-        }
+    // ALWAYS send permission request to renderer (show popup every time)
+    // Do NOT automatically use saved preferences!
+    if (mainWindow) {
+        mainWindow.webContents.send('permission-request', {
+            id: requestId,
+            permission: permission,
+            details: details,
+            url: webContents.getURL()
+        });
     }
 });
 
@@ -330,6 +324,7 @@ webviewSession.on('will-download', (event, item, webContents) => {
 
 // --- PERMISSION MANAGEMENT IPC HANDLERS ---
 
+
 // Handle permission response from renderer
 ipcMain.on('permission-response', (event, { requestId, allowed }) => {
     if (pendingPermissionRequest && pendingPermissionRequest.id === requestId) {
@@ -338,24 +333,27 @@ ipcMain.on('permission-response', (event, { requestId, allowed }) => {
         // Call the original callback with the user's decision
         pendingPermissionRequest.callback(allowed);
 
-        // Save preference to file
-        const origin = new URL(pendingPermissionRequest.url).origin;
-        const key = `${origin}:${pendingPermissionRequest.permission}`;
-        
-        if (!permissionPreferences) {
-            permissionPreferences = loadPermissionPreferences();
+        // Save preference to file (for reference, not auto-application)
+        try {
+            const origin = new URL(pendingPermissionRequest.url).origin;
+            const key = `${origin}:${pendingPermissionRequest.permission}`;
+            
+            if (!permissionPreferences) {
+                permissionPreferences = {};
+            }
+            
+            permissionPreferences[key] = allowed;
+            savePermissionPreferences(permissionPreferences);
+            
+            console.log(`✓ Saved permission preference: ${key} = ${allowed}`);
+        } catch (error) {
+            console.error('Failed to save permission preference:', error);
         }
-        
-        permissionPreferences[key] = allowed;
-        savePermissionPreferences(permissionPreferences);
-        
-        console.log(`Saved permission preference: ${key} = ${allowed}`);
 
         // Clear pending request
         pendingPermissionRequest = null;
     }
 });
-
 
 // --- DOWNLOAD MANAGEMENT IPC HANDLERS ---
 
