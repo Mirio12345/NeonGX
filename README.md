@@ -31,4 +31,4 @@ When trying to login with google it can happen that it says the browser isnt sup
 Discord wants you to login again everytime u switch the workplace
 
 
-Context Menu(right click Menu) spawning to far to the left and to far down
+Permisions dont get cleared corectly
