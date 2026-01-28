@@ -2,6 +2,75 @@
 
 const FIREFOX_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0';
 
+// RAM Optimization Mode
+let ramOptimizationMode = false;
+
+function loadRamOptimization() {
+    const saved = localStorage.getItem('neonGxRamOptimization');
+    ramOptimizationMode = saved === 'true';
+    console.log('RAM Optimization Mode:', ramOptimizationMode);
+}
+
+function saveRamOptimization() {
+    localStorage.setItem('neonGxRamOptimization', ramOptimizationMode);
+    console.log('Saved RAM Optimization Mode:', ramOptimizationMode);
+}
+
+function toggleRamOptimization() {
+    ramOptimizationMode = !ramOptimizationMode;
+    saveRamOptimization();
+    
+    // Reload all tabs to apply the change
+    restoreTabs();
+    
+    // Update toggle UI
+    const toggle = document.getElementById('ramOptimizationToggle');
+    if (toggle) {
+        toggle.checked = ramOptimizationMode;
+    }
+}
+
+// Unload webviews for a specific workspace (RAM optimization)
+function unloadWorkspace(workspaceId) {
+    const ws = state.workspaces.find(w => w.id === workspaceId);
+    if (!ws) return;
+
+    console.log('Unloading workspace:', ws.name);
+    
+    ws.tabs.forEach(tab => {
+        const wv = document.getElementById(`view-${tab.id}`);
+        if (wv) {
+            try {
+                // Save current URL
+                tab.url = wv.getURL() || tab.url;
+                
+                // Stop and remove webview
+                wv.stop();
+                wv.removeAllListeners();
+                wv.remove();
+                console.log('Unloaded webview:', tab.id);
+            } catch (e) {
+                console.error('Error unloading webview:', e);
+            }
+        }
+    });
+}
+
+// Load webviews for a specific workspace (RAM optimization)
+function loadWorkspace(workspaceId) {
+    const ws = state.workspaces.find(w => w.id === workspaceId);
+    if (!ws) return;
+
+    console.log('Loading workspace:', ws.name);
+    
+    ws.tabs.forEach(tab => {
+        // Check if webview already exists
+        const existingWv = document.getElementById(`view-${tab.id}`);
+        if (!existingWv) {
+            createWebviewElement(tab);
+        }
+    });
+}
 
 // --- STATE ---
 const defaultState = {
@@ -585,7 +654,7 @@ function hideContextMenu() {
 // --- INIT ---
 window.addEventListener('DOMContentLoaded', () => {
     loadState();
-
+    loadRamOptimization();
     // Setup permission request listener
     window.electronAPI.onPermissionRequest((data) => {
     console.log('[Renderer] Permission request received:', data);
@@ -593,6 +662,15 @@ window.addEventListener('DOMContentLoaded', () => {
     // Just show the modal - don't do any checking here!
     // The main process already checked for saved preferences
     showPermissionRequest(data);
+
+    // Update RAM usage display every 2 seconds
+    setInterval(async () => {
+    const ramStats = await window.electronAPI.getRamStats();
+    const ramDisplay = document.getElementById('currentRamUsage');
+        if (ramDisplay) {
+            ramDisplay.textContent = `${Math.round(ramStats.private)} MB`;
+        }
+    }, 2000);
 });
 
     // Setup download event listeners
@@ -632,12 +710,43 @@ window.addEventListener('DOMContentLoaded', () => {
         updateDownloadsList();
     });
 
+    // Initial load - check RAM optimization mode
+if (ramOptimizationMode) {
+    // RAM OPTIMIZED: Only load current workspace
+    console.log('[Init] RAM Optimization Mode: Loading current workspace only');
     const ws = getCurrentWorkspace();
-    if (!ws || ws.tabs.length === 0) {
+    if (ws && ws.tabs.length === 0) {
         createTab('https://www.google.com');
     } else {
         restoreTabs();
     }
+} else {
+    // NORMAL MODE: Load ALL workspaces' webviews
+    console.log('[Init] Normal Mode: Loading all workspaces');
+    state.workspaces.forEach(workspace => {
+        if (workspace.tabs.length === 0) {
+            // Skip empty workspaces
+            return;
+        }
+        
+        workspace.tabs.forEach(tab => {
+            // Create webview if doesn't exist
+            const existingWv = document.getElementById(`view-${tab.id}`);
+            if (!existingWv) {
+                createWebviewElement(tab);
+            }
+        });
+    });
+    
+    // Set initial active tab
+    const ws = getCurrentWorkspace();
+    if (ws && ws.tabs.length > 0) {
+        state.activeTabId = ws.tabs[0].id;
+        restoreTabs();
+    } else {
+        createTab('https://www.google.com');
+    }
+}
 
     renderWorkspaces();
 
@@ -796,17 +905,57 @@ function cancelWorkspace() {
 }
 
 function switchWorkspace(id) {
+    const oldWorkspaceId = state.activeWorkspaceId;
+    
+    // Don't do anything if already on this workspace
+    if (oldWorkspaceId === id) {
+        return;
+    }
+    
     saveState();
     state.activeWorkspaceId = id;
 
-    document.querySelectorAll('webview').forEach(wv => wv.classList.remove('active'));
+    // Hide all webviews from old workspace
+    document.querySelectorAll('webview').forEach(wv => {
+        wv.classList.remove('active');
+    });
 
     const newWs = state.workspaces.find(w => w.id === id);
+    
     if (newWs.tabs.length > 0) {
         state.activeTabId = newWs.tabs[0].id;
     } else {
         createTab('https://www.google.com');
         return;
+    }
+
+    // ============================================
+    // RAM OPTIMIZATION MODE: Unload old workspace
+    // ============================================
+    if (ramOptimizationMode) {
+        console.log('[RAM Optimization] Unloading old workspace:', oldWorkspaceId);
+        
+        // Unload old workspace's webviews
+        const oldWs = state.workspaces.find(w => w.id === oldWorkspaceId);
+        if (oldWs) {
+            oldWs.tabs.forEach(tab => {
+                const wv = document.getElementById(`view-${tab.id}`);
+                if (wv) {
+                    try {
+                        // Save URL before removing
+                        tab.url = wv.getURL() || tab.url;
+                        
+                        // Stop and remove webview to free memory
+                        wv.stop();
+                        wv.removeAllListeners();
+                        wv.remove();
+                        console.log('[RAM Optimization] Unloaded webview:', tab.id);
+                    } catch (e) {
+                        console.error('Error unloading webview:', e);
+                    }
+                }
+            });
+        }
     }
 
     renderWorkspaces();
@@ -859,36 +1008,95 @@ function restoreTabs() {
     const ws = getCurrentWorkspace();
     const viewport = document.getElementById('viewport');
     
-    // Properly remove all existing webviews with cleanup
-    const existingWebviews = viewport.querySelectorAll('webview');
-    existingWebviews.forEach(wv => {
-        try {
-            wv.stop();
-            wv.removeEventListener('did-navigate');
-            wv.removeEventListener('page-title-updated');
-            wv.removeEventListener('context-menu');
-            wv.removeEventListener('ipc-message');
-        } catch (e) {
-            // Webview might already be destroyed
+    // ============================================
+    // RAM OPTIMIZED MODE: Clear and reload only current workspace
+    // ============================================
+    if (ramOptimizationMode) {
+        console.log('[RAM Optimization] Loading only current workspace webviews');
+        
+        // Remove all existing webviews
+        const existingWebviews = viewport.querySelectorAll('webview');
+        existingWebviews.forEach(wv => {
+            try {
+                wv.stop();
+                wv.removeAllListeners();
+                wv.remove();
+            } catch (e) {
+                console.error('Error removing webview:', e);
+            }
+        });
+        
+        viewport.innerHTML = '';
+        
+        // Create only current workspace's webviews
+        ws.tabs.forEach(tab => {
+            // Only create if doesn't exist
+            const existingWv = document.getElementById(`view-${tab.id}`);
+            if (!existingWv) {
+                createWebviewElement(tab);
+            }
+        });
+        
+        renderTabs();
+        
+        const activeWv = document.getElementById(`view-${state.activeTabId}`);
+        if(activeWv) activeWv.classList.add('active');
+        
+        return;
+    }
+    
+    // ============================================
+    // NORMAL MODE: Preserve ALL webviews, just update visibility
+    // ============================================
+    console.log('[Normal Mode] Preserving all webviews, updating visibility');
+    
+    // Check which webviews exist for current workspace
+    ws.tabs.forEach(tab => {
+        const wv = document.getElementById(`view-${tab.id}`);
+        
+        // Create webview if it doesn't exist (new tab)
+        if (!wv) {
+            console.log('[Normal Mode] Creating new webview for tab:', tab.id);
+            createWebviewElement(tab);
         }
     });
     
-    viewport.innerHTML = '';
-
-    ws.tabs.forEach(tab => {
-        createWebviewElement(tab);
+    // Hide all webviews first
+    document.querySelectorAll('webview').forEach(wv => {
+        wv.classList.remove('active');
     });
-
-    renderTabs();
-
+    
+    // Show only current workspace's webviews
+    ws.tabs.forEach(tab => {
+        const wv = document.getElementById(`view-${tab.id}`);
+        if (wv) {
+            // Don't remove from DOM, just ensure it exists and is ready
+            // webview stays loaded and preserves state
+        }
+    });
+    
+    // Show active tab's webview
     const activeWv = document.getElementById(`view-${state.activeTabId}`);
-    if(activeWv) activeWv.classList.add('active');
+    if (activeWv) {
+        activeWv.classList.add('active');
+        // Focus active webview
+        activeWv.focus();
+    }
+    
+    renderTabs();
 }
 
 function createWebviewElement(tab) {
     const viewport = document.getElementById('viewport');
+    const existingWv = document.getElementById(`view-${tab.id}`);
+    
+    // If webview already exists in normal mode, don't recreate it
+    if (existingWv && !ramOptimizationMode) {
+        console.log('[createWebviewElement] Webview already exists, skipping:', tab.id);
+        return existingWv;
+    }
+    
     const webview = document.createElement('webview');
-
 
     webview.setAttribute('preload', 'webview-preload.js');
     webview.id = `view-${tab.id}`;
@@ -899,11 +1107,10 @@ function createWebviewElement(tab) {
     webview.classList.add('webview');
     if(tab.id === state.activeTabId) webview.classList.add('active');
 
-    // Append to viewport FIRST
+    // Append to viewport
     viewport.appendChild(webview);
 
     // THEN attach event listeners (after webview is in DOM)
-    // Fix 2: History Logic
     webview.addEventListener('did-navigate', (e) => {
         tab.url = e.url;
         if(state.activeTabId === tab.id) document.getElementById('urlInput').value = e.url;
@@ -923,7 +1130,7 @@ function createWebviewElement(tab) {
         renderTabs();
     });
 
-   // Context Menu Logic
+    // Context Menu Logic
     webview.addEventListener('context-menu', (e) => {
         console.log('Webview context-menu event fired:', e);
         try {
@@ -933,7 +1140,7 @@ function createWebviewElement(tab) {
         }
     });
 
-    // === NEW: Listen for messages from webview preload script ===
+    // Listen for messages from webview preload script
     webview.addEventListener('ipc-message', (event) => {
         console.log('Received message from webview:', event.channel);
         
@@ -942,6 +1149,8 @@ function createWebviewElement(tab) {
             hideContextMenu();
         }
     });
+    
+    return webview;
 }
 
 function closeTab(e, id) {
@@ -1496,4 +1705,24 @@ async function removePermission(key) {
     } catch (error) {
         alert('Failed to remove permission: ' + error.message);
     }
+}
+
+// Settings Modal Functions
+function openSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    modal.style.display = 'flex';
+    
+    // Set toggle state
+    const toggle = document.getElementById('ramOptimizationToggle');
+    if (toggle) {
+        toggle.checked = ramOptimizationMode;
+    }
+    
+    // Load cookies and permissions
+    loadCookies();
+    loadPermissions();
+}
+
+function toggleSettingsModal() {
+    document.getElementById('settingsModal').style.display = 'none';
 }

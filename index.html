@@ -88,8 +88,8 @@
             </div>
 
             <!-- NEW: Permissions & Cookies Button -->
-            <div class="history-item" onclick="openPermissionsModal()">
-                <i class="fa-solid fa-shield-halved"></i> Permissions & Cookies
+            <div class="history-item" onclick="openSettingsModal()">
+                <i class="fa-solid fa-gear"></i> Settings
             </div>
 
             <div class="history-item" onclick="toggleHistory()">
@@ -158,16 +158,20 @@
     <script src="renderer.js"></script>
 
     <!-- Permissions & Cookies Management Modal -->
-<div id="permissionsModal" class="modal-overlay" style="display: none;">
-    <div class="modal-content permissions-modal">
+<!-- SETTINGS MODAL (replaces the old permissions modal) -->
+<div id="settingsModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content settings-modal">
         <div class="modal-header">
-            <h2><i class="fa-solid fa-shield-halved"></i> Permissions & Cookies</h2>
-            <button class="close-btn" onclick="togglePermissionsModal()">&times;</button>
+            <h2><i class="fa-solid fa-gear"></i> Settings</h2>
+            <button class="close-btn" onclick="toggleSettingsModal()">&times;</button>
         </div>
         
         <div class="modal-body">
             <div class="permissions-tabs">
-                <button class="tab-btn active" data-tab="cookies" onclick="switchPermissionsTab('cookies')">
+                <button class="tab-btn active" data-tab="performance" onclick="switchPermissionsTab('performance')">
+                    <i class="fa-solid fa-bolt"></i> Performance
+                </button>
+                <button class="tab-btn" data-tab="cookies" onclick="switchPermissionsTab('cookies')">
                     <i class="fa-solid fa-cookie"></i> Cookies
                 </button>
                 <button class="tab-btn" data-tab="permissions" onclick="switchPermissionsTab('permissions')">
@@ -175,8 +179,42 @@
                 </button>
             </div>
 
+            <!-- Performance Tab (NEW) -->
+            <div id="performanceTab" class="tab-content active">
+                <div class="settings-section">
+                    <h3>Memory Management</h3>
+                    
+                    <!-- RAM Optimization Toggle -->
+                    <div class="toggle-switch">
+                        <div class="toggle-switch-label">
+                            <span class="label-title">RAM Optimization Mode</span>
+                            <span class="label-description">Only load webviews for the current workspace to reduce memory usage</span>
+                        </div>
+                        <input type="checkbox" id="ramOptimizationToggle" class="toggle-input" onchange="toggleRamOptimization()">
+                    </div>
+
+                    <!-- RAM Usage Display -->
+                    <div class="ram-info">
+                        <div class="ram-info-label">
+                            <i class="fa-solid fa-microchip"></i>
+                            <span>Current RAM Usage</span>
+                        </div>
+                        <span class="ram-value" id="currentRamUsage">Loading...</span>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Browser Data</h3>
+                    <div class="cookies-actions">
+                        <button onclick="clearBrowserData()" class="btn-danger" style="width: 100%; margin-bottom: 10px;">
+                            <i class="fa-solid fa-broom"></i> Clear All Browser Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Cookies Tab -->
-            <div id="cookiesTab" class="tab-content active">
+            <div id="cookiesTab" class="tab-content">
                 <div class="cookies-controls">
                     <div class="cookies-input-group">
                         <input type="text" id="cookieDomainInput" placeholder="Enter domain (e.g., youtube.com)">
@@ -185,9 +223,6 @@
                     <div class="cookies-actions">
                         <button onclick="clearAllCookies()" class="btn-danger">
                             <i class="fa-solid fa-trash"></i> Clear All Cookies
-                        </button>
-                        <button onclick="clearBrowserData()" class="btn-danger">
-                            <i class="fa-solid fa-broom"></i> Clear All Data
                         </button>
                     </div>
                 </div>

@@ -1,4 +1,5 @@
 /* --- RESET & VARIABLES --- */
+/* CSS Variables for Theming */
 :root {
     --bg-dark: #0f0f0f;
     --bg-panel: #161618;
@@ -1084,4 +1085,128 @@ webview:not(.active) {
 
 .close-btn:hover {
     color: var(--accent);
+}
+
+/* ============================================
+   SETTINGS MODAL & TOGGLE SWITCH
+   ============================================ */
+
+/* Toggle Switch Styles */
+.toggle-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px;
+    background: var(--bg-lighter);
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.toggle-switch-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.toggle-switch-label .label-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.toggle-switch-label .label-description {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.toggle-input {
+    position: relative;
+    width: 50px;
+    height: 26px;
+    appearance: none;
+    background: #444;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+    outline: none;
+}
+
+.toggle-input::before {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-input:checked {
+    background: var(--accent);
+}
+
+.toggle-input:checked::before {
+    transform: translateX(24px);
+}
+
+.toggle-input:hover {
+    background: #555;
+}
+
+.toggle-input:checked:hover {
+    background: #ff2e5e;
+}
+
+/* RAM Usage Indicator */
+.ram-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px;
+    background: var(--bg-lighter);
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.ram-info-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+}
+
+.ram-info-label i {
+    color: var(--accent);
+}
+
+.ram-value {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--accent);
+}
+
+/* Settings Section */
+.settings-section {
+    margin-bottom: 20px;
+}
+
+.settings-section h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+}
+
+/* Settings Modal Specific */
+.settings-modal {
+    width: 850px;
+    height: 650px;
+    padding: 0;
+    background: var(--bg-panel);
 }
